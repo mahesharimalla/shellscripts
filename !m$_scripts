@@ -1,0 +1,106 @@
+Jenkins-file
+
+
+Lms pipeline script:
+
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Sonar Analysis') {
+            steps {
+                echo 'Testing..'
+                sh 'cd webapp && sudo docker run  --rm -e SONAR_HOST_URL="http://100.24.105.229:9000" -e SONAR_TOKEN="sqp_5d9ecd6ef323c1ae3266ac000b1e90bacf2b07e7"  -v ".:/usr/src" sonarsource/sonar-scanner-cli -Dsonar.projectKey=lms'
+            }
+        }
+
+        stage('Build LMS') {
+            steps {
+                echo 'Building..'
+                sh 'cd webapp && npm install && npm run build'
+            }
+        }
+
+        stage('Release LMS') {
+            steps {
+                script {
+                    echo "Releasing.."       
+                    def packageJSON = readJSON file: 'webapp/package.json'
+                    def packageJSONVersion = packageJSON.version
+                    echo "${packageJSONVersion}"  
+                    sh "zip webapp/dist-${packageJSONVersion}.zip -r webapp/dist"
+                    sh "curl -v -u admin:admin123 --upload-file webapp/dist-${packageJSONVersion}.zip http://100.24.105.229:8081/repository/lms/"     
+            }
+            }
+        }
+
+        stage('Deploy LMS') {
+            steps {
+                script {
+                    echo "Deploying.."       
+                    def packageJSON = readJSON file: 'webapp/package.json'
+                    def packageJSONVersion = packageJSON.version
+                    echo "${packageJSONVersion}"  
+                    sh "curl -u admin:admin123 -X GET \'http://100.24.105.229:8081/repository/lms/dist-${packageJSONVersion}.zip\' --output dist-'${packageJSONVersion}'.zip"
+                    sh 'sudo rm -rf /var/www/html/*'
+                    sh "sudo unzip -o dist-'${packageJSONVersion}'.zip"
+                    sh "sudo cp -r webapp/dist/* /var/www/html"
+            }
+            }
+        }
+
+
+    }
+}
+
+
+
+
+
+Nginx:
+
+Prod ENV:
+
+
+Install the nginx in Dev Server
+ sudo apt update-y && apt install -y nginx
+    2  sudo apt update -y && apt install -y nginx
+    3  yes
+    4  sudo apt update
+    5  sudo apt install nginx -y
+    6  sudo rm -rf /var/www/html/*
+
+The below command is used to download the artifact from the nexus it will give only dist file only.
+    7  curl -u admin:admin -X GET 'http://44.212.47.219:8081/repository/lms/lms-1.1.zip' --output lms-2.1.zip
+    8  ls
+    9  sudo apt -y install unzip
+   10  ls
+   11  sudo unzip lms-2.1.zip
+   12  ls
+   13  sudo cp -r dist/* /var/www/html/
+   14  ls /var/www/html/
+
+
+
+
+Sonarqube:
+
+Install Docker:
+
+curl -fsSL https://get.docker.com -o get-docker.sh 
+sh get-docker.sh 
+docker 
+(or)
+docker --version
+
+
+Install SonarQube:
+
+Sudo ss -ntpl
+sudo docker container run -dt --name sonarqube -p 9000:9000 sonarqube
+Sudo ss -ntpl
+
+
+
+
