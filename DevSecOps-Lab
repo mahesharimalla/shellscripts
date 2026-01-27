@@ -1,19 +1,27 @@
 pipeline {
     agent any
 tools {
-        nodejs 'nodejs22'
+        jdk 'jdk_21'
+        nodejs 'node_22'
+        
     }
     
      environment {
-        SCANNER_HOME = tool 'SONAR_SCANNER'
+       SONAR_TOKEN     = credentials('lms_sonartoken')
+       SCANNER_HOME    = tool 'sonar_scanner'
+        LMS_REGISTRY_URL = credentials('LMS_NEXUS_REGISTRY_URL')
+        LMS_DOCKER_REPO  = credentials('LMS_NEXUS_DOCKER_REPO')
+        LMS_PROJECT_NAME = credentials('LMS_NEXUS_PROJECT')
     }
     
     stages {
         stage('📥 Checkout Code') {
-            steps {
-               git branch: 'dev', changelog: false, poll: false, url: 'https://github.com/mahesharimalla/lms.git'
-            }
+        steps {
+            git branch: 'dev',
+                credentialsId: 'github-token',
+                url: 'https://github.com/mahesharimalla/lms.git'
         }
+    }
         
         stage('Compile Applications') {
     parallel {
@@ -22,6 +30,7 @@ tools {
                 dir('api') {
                     sh '''
                       npm install
+                      npx prisma generate
                       npm run lint
                       npm run build
                     '''
@@ -42,24 +51,8 @@ tools {
     }
 }
 
-/*
-         stage('Frontend Compilation') {
-            steps {
-                dir('webapp') {
-                    sh 'find . -name "*.js" -exec node --check {} +'
-                }
-            }
-        }
-        
-        stage('Backend Compilation') {
-            steps {
-                dir('api') {
-                    sh 'find . -name "*.js" -exec node --check {} +'
-                }
-            }
-        }
-*/
 
+    
 /*
      stage('🚦 Gate-0: Pre-Merge Hygiene') {
     steps {
@@ -126,13 +119,17 @@ ${env.BUILD_URL}
 
 stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SONAR') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=lms \
-                            -Dsonar.projectKey=lms '''
+                withSonarQubeEnv('sonar_server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \\
+                           -Dsonar.projectName=lms \\
+                           -Dsonar.sources=. \\
+                           -Dsonar.projectKey=lms '''
                 }
             }
         }
 
+
+/*
 stage('Gate-1: SAST (SonarQube)') {
     steps {
         script {
@@ -196,85 +193,168 @@ Component AO approval is required to continue.
     }
 }
 
+*/
 
 stage('🛡️ OWASP Dependency Check') {
 
     steps {
-        script {
-            echo "Running OWASP Dependency-Check with Quality Gates..."
+        echo "Running OWASP Dependency-Check with Quality Gates..."
 
-            sh """
-              ${DC_HOME}/bin/dependency-check.sh \
-                --project "LMS-Application" \
-                --scan . \
-                --format XML \
-                --out dependency-check-report \
+        dependencyCheck(
+            odcInstallation: 'DP_Check',
+            additionalArguments: '''
+                --project LMS-Application
+                --scan .
+                --format XML
                 --failOnCVSS 7
-            """
-        }
+            '''
+        )
+
+        // Publish results to Jenkins UI (graphs, CVEs, licenses)
+        dependencyCheckPublisher(
+            pattern: '**/dependency-check-report.xml'
+        )
     }
-
+/*
     post {
-
         success {
             echo "✅ Dependency-Check PASSED (No HIGH / CRITICAL vulnerabilities)"
 
-            /* ---------- Component AO Approval ---------- */
+            // Component AO approval
             timeout(time: 24, unit: 'HOURS') {
                 input message: 'Approve OWASP Dependency Check results?',
                       ok: 'Approve',
-                      submitter: 'component-ao'   // Jenkins user or group
+                      submitter: 'component-ao'
             }
 
-            /* ---------- Inform Security AO ---------- */
-            emailext (
+            // Inform Security AO
+            emailext(
                 subject: "✅ OWASP Dependency Check PASSED | Component AO Approved",
                 body: """
-Hello Security AO,
+OWASP Dependency-Check PASSED.
 
-OWASP Dependency-Check has PASSED successfully.
-
-✔ No HIGH or CRITICAL vulnerabilities found
+✔ No HIGH / CRITICAL vulnerabilities
 ✔ Approved by Component AO
-✔ Pipeline: ${env.JOB_NAME} #${env.BUILD_NUMBER}
+✔ Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}
 
-You may review the report in Jenkins.
-
-Regards,
-Jenkins DevSecOps Pipeline
+See Jenkins → Dependency-Check for full report.
 """,
                 to: 'security-ao@company.com'
             )
         }
-
-
 
         failure {
             echo "❌ Dependency-Check FAILED (HIGH / CRITICAL vulnerabilities found)"
 
-            emailext (
+            emailext(
                 subject: "🚨 OWASP Dependency Check FAILED | Pipeline Stopped",
                 body: """
-Hello Security AO,
+OWASP Dependency-Check FAILED.
 
-OWASP Dependency-Check has FAILED.
+❌ HIGH / CRITICAL vulnerabilities detected
+❌ Pipeline STOPPED
+✔ Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}
 
-❌ HIGH or CRITICAL vulnerabilities detected
-❌ Pipeline execution STOPPED
-❌ Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}
-
-Immediate remediation required.
-
-Regards,
-Jenkins DevSecOps Pipeline
+Review Jenkins → Dependency-Check for:
+- CVE list
+- Affected dependencies
+- CVSS scores
+- License issues
 """,
                 to: 'security-ao@company.com'
             )
         }
-    }
-    
-
+    } */
 }
 
+
+
+
+stage('Build & Push Docker Images') {
+  steps {
+    script {
+      def apiImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}"
+      def webappImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh """
+          echo "🛠️ Building API image"
+          docker build --no-cache -t ${apiImage} ./api
+
+          echo "📤 Pushing API image"
+          docker push ${apiImage}
+        """
+
+        sh """
+          echo "🛠️ Building WebApp image"
+          docker build --no-cache -t ${webappImage} ./webapp
+
+          echo "📤 Pushing WebApp image"
+          docker push ${webappImage}
+        """
+      }
+    }
+  }
+}
+
+
+   stage('Trivy Docker Image Scan') {
+  steps {
+    script {
+      def apiImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}"
+      def webappImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}"
+
+      sh """
+        echo "🔎 Scanning API image with Trivy..."
+        trivy image --exit-code 1 --severity HIGH,CRITICAL \
+          --format table ${apiImage} | tee trivy-api-scan.txt
+
+        echo "🔎 Scanning WebApp image with Trivy..."
+        trivy image --exit-code 1 --severity HIGH,CRITICAL \
+          --format table ${webappImage} | tee trivy-webapp-scan.txt
+      """
+    }
+  }
+}
+
+
+stage('🚀 Deploy LMS via Docker Compose') {
+  steps {
+    script {
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh '''
+          export BUILD_NUMBER=${BUILD_NUMBER}
+          docker compose down
+          docker compose pull
+          docker compose up -d
+        '''
+      }
+    }
+  }
+}
+
+
+    
     }
 }
