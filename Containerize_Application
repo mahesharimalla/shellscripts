@@ -1,0 +1,188 @@
+Dockerize LMS Database
+
+Postgres Database Container Creation
+
+docker container run -dt –name lms-db -e POSTGRES_PASSWORD=password postgres
+Dockerize LMS Database
+
+Postgres Database Container Creation
+
+docker pull postgres
+docker container run -dt --name db postgres —-------> It won't be accessible we didn’t specify the password while creating the container.
+
+docker container logs db 
+
+
+
+docker container run -dt -–name lms-db -e POSTGRES_PASSWORD=lms12345 postgres
+
+ docker container ls
+
+
+Dockerize LMS Backend
+
+
+git clone  -b dev https://github.com/mahesharimalla/lms.git
+cd ~/lms/api
+
+vi .env
+MODE=production
+PORT=8080
+DATABASE_URL=postgresql://postgres:lms12345@172.17.0.2:5432/postgres
+
+
+
+
+To find docker container ip address:
+docker inspect <container ID>
+docker inspect lms-db
+
+
+
+
+
+
+vi Dockerfile
+
+FROM node:16
+
+
+
+docker build -t mahesharimalla/lms-be .
+
+docker container run -dt –name t1 mahesharimalla/lms-be
+  
+
+
+docker container exec -t t1 node -v
+
+docker container exec -t1 npm -v
+
+
+
+
+
+docker build -t mahesharimalla/lms-be .
+docker container run -dt –name t3 mahesharimalla/lms-be
+
+
+
+vi Dockerfile
+
+FROM node:16
+RUN mkdir /backend
+WORKDIR /backend
+COPY . /backend         # It will copy all the current directory files to /backend
+RUN  npm install
+RUN npx prisma db push
+RUN npm run build
+
+
+
+docker build -t mahesharimalla/lms-be .
+docker container run -d –name t4 mahesharimalla/lms-be 
+
+
+
+
+
+
+
+
+
+
+
+
+
+In terminal we can check the lms-be  t1 container is accessible to connect to the api by using curl:
+
+Curl 172.17.0.3:8080/api    
+Curl <lms-be-t1 container ip address>:8080/api
+
+When we started doing curl with port number 8080 application started in production mode on port 8080 we can see in the below image:
+
+
+
+
+But we can't access it in the browser, which means we did not assign the port number while creating the dockerfile & also in the container.
+Docker File : 
+
+FROM node:16
+RUN mkdir /backend
+WORKDIR /backend
+COPY . /backend
+RUN npm install
+RUN npx prisma db push
+RUN npm run build
+EXPOSE 8080
+CMD ["node","build/index.js"]
+
+
+docker build -t mahesharimalla/lms-be .
+
+docker container run -dt --name lms-be -p 8080:8080 mahesh                                                                                             arimalla/lms-be
+
+
+
+r
+
+
+
+Here, we have created a new container with the name of lms-be by allowing port number 8080. So we can observe the app get started and we can access it in the browser.
+ Public ip address:8080/api
+
+
+
+
+
+LMS Frontend Setup:
+
+cd ~lms/webapp/
+
+Write a dockerfile for lms-frontend:
+
+FROM node:16 AS build
+RUN mkdir /frontend
+WORKDIR /frontend
+COPY . /frontend
+RUN npm install
+RUN npm run build
+FROM nginx
+COPY --from=build /frontend/dist /usr/share/nginx/html
+
+
+Setup Env 
+cd lms/webapp
+
+vi .env 
+VITE_API_URL=http://3.228.8.7:8080/api
+
+
+
+:wq 
+
+
+
+
+
+ docker build -t mahesharimalla/lms-fe .
+
+ docker container run -dt --name lms-fe -p 80:80 mahesharimalla/lms-fe
+
+
+
+Now, our LMS setup with DATABASE(POSTGRES), BACKEND(NODEJS) & FRONTEND (REACTJS) containers setup is ready 
+We can access the LMS web-page in the browser with the public ip address of the instance (with or without port number 80—-optional).
+
+
+
+
+
+
+
+
+
+
+Working with Docker-Compose:
+
+
