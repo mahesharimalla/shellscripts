@@ -22,7 +22,7 @@ tools {
                 url: 'https://github.com/mahesharimalla/lms.git'
         }
     }
-        
+  
         stage('Compile Applications') {
     parallel {
         stage('Compile Backend') {
@@ -329,15 +329,72 @@ stage('Build & Push Docker Images') {
 }
 
 
-stage('🚀 Deploy LMS via Docker Compose') {
+/*
+stage('Build & Push Docker Images') {
   steps {
     script {
+
+      // Short local image names (ONLY these remain on Jenkins)
+      def apiLocal    = "lms-api:${env.BUILD_NUMBER}"
+      def webLocal    = "lms-webapp:${env.BUILD_NUMBER}"
+
+      // Nexus image names (temporary on Jenkins)
+      def apiRemote   = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}"
+      def webRemote   = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}"
+
       withCredentials([usernamePassword(
         credentialsId: 'nexus_cred',
         usernameVariable: 'NEXUS_USERNAME',
         passwordVariable: 'NEXUS_PASSWORD'
       )]) {
 
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh """
+          echo "🛠️ Building API image (short name only)"
+          docker build --no-cache -t ${apiLocal} ./api
+
+          echo "🏷️ Tagging API image for Nexus"
+          docker tag ${apiLocal} ${apiRemote}
+          
+
+          echo "📤 Pushing API image to Nexus"
+          docker push ${apiLocal} ${apiRemote}
+        """
+
+        sh """
+          echo "🛠️ Building WebApp image (short name only)"
+          docker build --no-cache -t ${webLocal} ./webapp
+
+          echo "🏷️ Tagging WebApp image for Nexus"
+          docker tag ${webLocal} ${apiRemote}
+
+          echo "📤 Pushing WebApp image to Nexus"
+          docker push ${webLocal} ${webRemote}
+
+         
+        """
+      }
+    }
+  }
+}
+*/
+
+/*
+stage('🚀 Deploy LMS via Docker Compose') {
+  steps {
+    script {
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        //passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+dir('/opt/jenkins/lms') {
         sh '''
           echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
             -u "$NEXUS_USERNAME" --password-stdin
@@ -351,10 +408,83 @@ stage('🚀 Deploy LMS via Docker Compose') {
         '''
       }
     }
+}
+
+  }
+}  
+
+*/
+
+
+
+stage('🚀 Deploy LMS via Docker Run') {
+  steps {
+    script {
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
+            -u "$NEXUS_USERNAME" --password-stdin
+
+          docker network create lms-net || true
+
+          docker rm -f lms-webapp lms-api lms-postgres || true
+
+          docker run -d \
+            --name lms-postgres \
+            --network lms-net \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres@123 \
+            -e POSTGRES_DB=mydb \
+            -v lms-db-data:/var/lib/postgresql/data \
+            postgres:15
+
+          docker run -d \
+            --name lms-api \
+            --network lms-net \
+            -p 8081:8081 \
+            -e MODE=prod \
+            -e PORT=8080 \
+            -e DATABASE_URL=postgresql://postgres:strongpassword@lms-postgres:5432/mydb \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}
+
+          docker run -d \
+            --name lms-webapp \
+            --network lms-net \
+            -p 3000:80 \
+            -e MODE=prod \
+            -e API_URL=http://lms-api:8081 \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}
+        '''
+      }
+    }
   }
 }
 
 
-    
     }
-}
+}   
+
+
+this is my existing pipeline getting these below 
+
++ echo ****
+
++ docker login **** -u admin --password-stdin
+
+Login Succeeded
+
+export BUILD_NUMBER=${BUILD_NUMBER} docker compose down docker compose pull docker compose up -d
+0.26s
+
++ export BUILD_NUMBER=52
+
++ docker compose down
+
+no configuration file provided: not found
+
+script returned exit code 1
