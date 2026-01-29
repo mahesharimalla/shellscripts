@@ -54,6 +54,445 @@ tools {
 
     
 /*
+     stage('Gate-0: Gitleaks Secret Scan') {
+    steps {
+        script {
+            sh '''
+              set +e
+              echo "🔍 Running Gitleaks Secret Scan..."
+
+              mkdir -p security-reports/gitleaks
+
+              gitleaks detect \
+                --source . \
+                --no-git \
+                --redact \
+                --report-format json \
+                --report-path security-reports/gitleaks/gitleaks-report.json
+
+              EXIT_CODE=$?
+
+              # Generate HTML only if report exists and is not empty
+              if [ -s security-reports/gitleaks/gitleaks-report.json ]; then
+                echo "⚠ Secrets detected. Generating HTML report..."
+
+                cat <<'EOF' > security-reports/gitleaks/gitleaks-report.html
+<html>
+<head>
+  <title>Gitleaks Security Report</title>
+  <style>
+    body { font-family: Arial; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background-color: #d32f2f; color: white; }
+  </style>
+</head>
+<body>
+<h2>❌ Gitleaks Secret Detection Report</h2>
+<table>
+<tr>
+  <th>Rule</th>
+  <th>File</th>
+  <th>Line</th>
+  <th>Confidence</th>
+</tr>
+EOF
+
+                jq -r '.[] |
+                  "<tr><td>" + .rule +
+                  "</td><td>" + .file +
+                  "</td><td>" + (.line|tostring) +
+                  "</td><td>" + .confidence +
+                  "</td></tr>"
+                ' security-reports/gitleaks/gitleaks-report.json >> security-reports/gitleaks/gitleaks-report.html
+
+                echo "</table></body></html>" >> security-reports/gitleaks/gitleaks-report.html
+              fi
+
+              exit $EXIT_CODE
+            '''
+        }
+    }
+    post {
+        always {
+            archiveArtifacts artifacts: 'security-reports/gitleaks/*', fingerprint: true
+        }
+        failure {
+            echo '❌ Gate-0 FAILED – Secrets detected. Review Gitleaks report.'
+        }
+        success {
+            echo '✅ Gate-0 PASSED – No secrets detected.'
+        }
+    }
+}
+
+
+*/
+
+stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \\
+                           -Dsonar.projectName=lms \\
+                           -Dsonar.sources=. \\
+                           -Dsonar.projectKey=lms '''
+                }
+            }
+        }
+
+
+
+stage('Gate-1: SAST (SonarQube)') {
+    steps {
+        script {
+            try {
+                timeout(time: 2, unit: 'MINUTES') {
+                    def qg = waitForQualityGate()
+
+                    echo "Gate-1 Status: ${qg.status}"
+
+                    // ✅ If Quality Gate passed → continue
+                    if (qg.status == 'OK') {
+                        echo "Quality Gate passed. No approval required."
+                    }
+                    // ❌ If failed / warn / pending → approval required
+                    else {
+                        def approval = input(
+                            message: """
+Gate-1 (SAST) did NOT pass ❌
+
+SonarQube Status: ${qg.status}
+
+Component AO approval is required to continue.
+""",
+                            ok: 'Approve & Continue',
+                            parameters: [
+                                string(
+                                    name: 'JUSTIFICATION',
+                                    defaultValue: '',
+                                    description: 'Why is this risk acceptable? (Ticket / Reason)'
+                                )
+                            ]
+                        )
+
+                        echo "Gate-1 approved by Component AO. Justification: ${approval}"
+                    }
+                }
+            }
+            // ⏳ Handles SonarQube stuck / timeout case
+            catch (err) {
+                def approval = input(
+                    message: """
+Gate-1 (SAST) TIMEOUT ⏳
+
+SonarQube did not return a Quality Gate result in time.
+
+Component AO approval is required to continue.
+""",
+                    ok: 'Approve & Continue',
+                    parameters: [
+                        string(
+                            name: 'JUSTIFICATION',
+                            defaultValue: '',
+                            description: 'Why is this risk acceptable? (Ticket / Reason)'
+                        )
+                    ]
+                )
+
+                echo "Gate-1 approved after timeout. Justification: ${approval}"
+            }
+        }
+    }
+}
+
+
+stage('🛡️ Gate-2: OWASP Dependency Check') {
+    steps {
+        echo "🔍 Running OWASP Dependency-Check with Quality Gates..."
+
+        dependencyCheck(
+            odcInstallation: 'DP_Check',
+            additionalArguments: """
+                --project LMS-Application
+                --scan .
+                --format XML
+                --failOnCVSS 7
+            """
+        )
+
+        dependencyCheckPublisher(
+            pattern: '**/dependency-check-report.xml'
+        )
+    }
+
+    post {
+        success {
+            echo "✅ Dependency-Check PASSED (No HIGH / CRITICAL vulnerabilities)"
+        }
+
+        failure {
+            echo "❌ Dependency-Check FAILED (HIGH / CRITICAL vulnerabilities found)"
+
+            emailext(
+                subject: "🚨 OWASP Dependency Check FAILED | Pipeline Stopped",
+                body: """
+OWASP Dependency-Check FAILED.
+
+❌ HIGH / CRITICAL vulnerabilities detected
+❌ Pipeline STOPPED
+
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+""",
+                to: 'security-ao@company.com'
+            )
+        }
+    }
+}
+
+stage('🧑‍⚖️ Gate-2 Approval: Component AO') {
+    when {
+        expression { currentBuild.currentResult == 'SUCCESS' }
+    }
+
+    steps {
+        script {
+            timeout(time: 24, unit: 'HOURS') {
+                def decision = input(
+                    message: 'Approve OWASP Dependency-Check results?',
+                    ok: 'Submit Decision',
+                    submitter: 'component-ao',
+                    parameters: [
+                        choice(
+                            name: 'DECISION',
+                            choices: ['APPROVE', 'ABORT'],
+                            description: 'APPROVE to continue, ABORT to stop the pipeline'
+                        )
+                    ]
+                )
+
+                if (decision == 'ABORT') {
+                    error('❌ OWASP Dependency Check rejected by Component AO')
+                }
+
+                echo '✅ OWASP Dependency Check approved by Component AO'
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext(
+                subject: "✅ OWASP Dependency Check APPROVED | Component AO",
+                body: """
+OWASP Dependency-Check PASSED.
+
+✔ No HIGH / CRITICAL vulnerabilities
+✔ Approved by Component AO
+
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+""",
+                to: 'security-ao@company.com'
+            )
+        }
+    }
+}
+
+
+stage('Build & Push Docker Images') {
+  steps {
+    script {
+      def apiImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}"
+      def webappImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh """
+          echo "🛠️ Building API image"
+          docker build --no-cache -t ${apiImage} ./api
+
+          echo "📤 Pushing API image"
+          docker push ${apiImage}
+        """
+
+        sh """
+          echo "🛠️ Building WebApp image"
+          docker build --no-cache -t ${webappImage} ./webapp
+
+          echo "📤 Pushing WebApp image"
+          docker push ${webappImage}
+        """
+      }
+    }
+  }
+}
+
+
+   stage('Trivy Docker Image Scan') {
+  steps {
+    script {
+      def apiImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${env.BUILD_NUMBER}"
+      def webappImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${env.BUILD_NUMBER}"
+
+      sh """
+        echo "🔎 Scanning API image with Trivy..."
+        trivy image --exit-code 1 --severity HIGH,CRITICAL \
+          --format table ${apiImage} | tee trivy-api-scan.txt
+
+        echo "🔎 Scanning WebApp image with Trivy..."
+        trivy image --exit-code 1 --severity HIGH,CRITICAL \
+          --format table ${webappImage} | tee trivy-webapp-scan.txt
+      """
+    }
+  }
+}
+
+
+
+stage('🚀 Deploy LMS via Docker Run (Secure)') {
+  steps {
+    script {
+      withCredentials([
+        usernamePassword(
+          credentialsId: 'nexus_cred',
+          usernameVariable: 'NEXUS_USERNAME',
+          passwordVariable: 'NEXUS_PASSWORD'
+        ),
+        //string(credentialsId: 'LMS_POSTGRES_USER', variable: 'LMS_POSTGRES_USER'),
+        //string(credentialsId: 'LMS_POSTGRES_PASSWORD', variable: 'LMS_POSTGRES_PASSWORD'),
+        //string(credentialsId: 'LMS_POSTGRES_DB', variable: 'LMS_POSTGRES_DB'),
+        //string(credentialsId: 'DATABASE_URL', variable: 'DATABASE_URL')
+      ]) {
+
+        sh(
+          shell: '/bin/bash',
+          script: '''
+            set -e
+            set +x
+
+            echo "🔐 Logging in to Nexus"
+            echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
+              -u "$NEXUS_USERNAME" --password-stdin
+
+            echo "🌐 Creating Docker network"
+            docker network create lms-net || true
+
+            echo "🧹 Cleaning old containers"
+            docker rm -f lms-webapp lms-api lms-postgres 2>/dev/null || true
+
+            echo "🐘 Starting PostgreSQL"
+            docker run -d \
+              --name lms-postgres \
+              --network lms-net \
+              --restart unless-stopped \
+              -e POSTGRES_USER="postgres" \
+              -e POSTGRES_PASSWORD="postgres123" \
+              -e POSTGRES_DB="mydb" \
+              -v lms-db-data:/var/lib/postgresql/data \
+              postgres:15
+
+            echo "🚀 Starting LMS API"
+            docker run -d \
+              --name lms-api \
+              --network lms-net \
+              --restart unless-stopped \
+              -p 8081:8081 \
+              -e MODE=production \
+              -e PORT=8081 \
+              -e DATABASE_URL="postgresql://postgres:postgres123@lms-postgres:5432/mydb" \
+              "$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/lms-api:$BUILD_NUMBER"
+
+
+            echo "🌐 Starting LMS WebApp"
+            docker run -d \
+              --name lms-webapp \
+              --network lms-net \
+              --restart unless-stopped \
+              -p 3001:80 \
+              -e VITE_API_URL=http://192.162.11.18:8081/api \
+              "$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/lms-webapp:$BUILD_NUMBER"
+          '''
+        )
+      }
+    }
+  }
+}
+
+
+    }
+}
+
+
+
+=======================================================================================================================================================
+
+pipeline {
+    agent any
+tools {
+        jdk 'jdk_21'
+        nodejs 'node_22'
+        
+    }
+    
+     environment {
+       SONAR_TOKEN     = credentials('lms_sonartoken')
+       SCANNER_HOME    = tool 'sonar_scanner'
+        LMS_REGISTRY_URL = credentials('LMS_NEXUS_REGISTRY_URL')
+        LMS_DOCKER_REPO  = credentials('LMS_NEXUS_DOCKER_REPO')
+        LMS_PROJECT_NAME = credentials('LMS_NEXUS_PROJECT')
+    }
+    
+    stages {
+        stage('📥 Checkout Code') {
+        steps {
+            git branch: 'dev',
+                credentialsId: 'github-token',
+                url: 'https://github.com/mahesharimalla/lms.git'
+        }
+    }
+  
+        stage('Compile Applications') {
+    parallel {
+        stage('Compile Backend') {
+            steps {
+                dir('api') {
+                    sh '''
+                      npm install
+                      npx prisma generate
+                      npm run lint
+                      npm run build
+                    '''
+                }
+            }
+        }
+
+        stage('Compile Frontend') {
+            steps {
+                dir('webapp') {
+                    sh '''
+                      npm install
+                      npm run build
+                    '''
+                }
+            }
+        }
+    }
+}
+
+
+    
+/*
      stage('🚦 Gate-0: Pre-Merge Hygiene') {
     steps {
         script {
