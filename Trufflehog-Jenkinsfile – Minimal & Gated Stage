@@ -1,0 +1,133 @@
+Got it 👍 — **short, clean, and enterprise-recommended** TruffleHog integration **without Docker** for a **GitHub repo in Jenkins**.
+
+---
+
+## ✅ Recommended Way: TruffleHog (Binary) + Jenkins Pipeline
+
+### 1️⃣ Install TruffleHog on Jenkins Agent (One-time)
+
+On the Jenkins node (Linux):
+
+```bash
+curl -sSfL https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_linux_amd64.tar.gz \
+| tar -xz -C /usr/local/bin trufflehog
+```
+
+Verify:
+
+```bash
+trufflehog version
+```
+
+---
+
+### 2️⃣ Create GitHub Token (Read-only)
+
+Scopes:
+
+* `repo` (private repos)
+* `read:org` (if org repo)
+
+Store it in **Jenkins Credentials**:
+
+* **ID**: `github_trufflehog_token`
+* **Type**: Secret Text
+
+---
+
+### 3️⃣ Jenkinsfile – Minimal & Gated Stage
+
+```groovy
+stage('Secrets Scan - TruffleHog') {
+  environment {
+    GH_TOKEN = credentials('github_trufflehog_token')
+  }
+  steps {
+    sh '''
+      echo "🔐 Running TruffleHog secret scan..."
+
+      trufflehog github \
+        --repo https://github.com/ORG/REPO \
+        --token $GH_TOKEN \
+        --only-verified \
+        --fail \
+        --json > trufflehog-report.json
+    '''
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'trufflehog-report.json', fingerprint: true
+    }
+    failure {
+      error "❌ Secrets detected! Pipeline blocked."
+    }
+  }
+}
+```
+
+---
+
+### 4️⃣ What This Setup Gives You (Best Practice)
+
+✔ No Docker required
+✔ Scans **entire commit history**
+✔ **Only verified secrets** (low false positives)
+✔ **Pipeline FAILS automatically**
+✔ JSON report archived for audit/compliance
+
+---
+
+### 5️⃣ Recommended Flags (Production)
+
+| Flag              | Purpose               |
+| ----------------- | --------------------- |
+| `--only-verified` | Avoid noise           |
+| `--fail`          | Enforce security gate |
+| `--json`          | Audit & reporting     |
+| `github`          | Best for PRs & repos  |
+
+---
+
+### 6️⃣ Where This Stage Should Sit
+
+```
+Checkout
+↓
+TruffleHog (Secrets Gate)  🚨
+↓
+SAST (SonarQube)
+↓
+Build
+↓
+DAST / Image Scan
+↓
+Deploy
+```
+
+---
+
+### 7️⃣ Optional (PR-only Scan – Faster)
+
+```bash
+trufflehog git file://. --since-commit origin/main --fail
+```
+
+---
+
+### 🔐 Final Verdict (Enterprise Grade)
+
+This is **exactly how TruffleHog is used in DevSecOps pipelines**:
+
+* Lightweight
+* Fast
+* Gated
+* Audit-friendly
+* Zero container overhead
+
+If you want:
+
+* **PR-based scanning**
+* **Fail only on HIGH-risk secrets**
+* **Email/OpenProject ticket on failure**
+
+Say the word — I’ll wire it cleanly 🔥
