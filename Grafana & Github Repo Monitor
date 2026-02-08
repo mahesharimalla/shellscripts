@@ -1,0 +1,60 @@
+sudo apt update
+
+Website to download the Grafana:
+https://grafana.com/grafana/download?pg=oss-graf&plcmt=hero-btn-1
+
+
+
+Steps to install Grafana in Ubuntu and Debian(64 Bit)SHA256: 5bbf5f7517ec89b87fc3550cb05827383af68358763c15aee516b90a46cff707
+sudo apt-get install -y adduser libfontconfig1 musl
+wget https://dl.grafana.com/grafana-enterprise/release/12.3.2/grafana-enterprise_12.3.2_21390657659_linux_amd64.deb
+sudo dpkg -i grafana-enterprise_12.3.2_21390657659_linux_amd64.deb
+
+
+sudo /bin/systemctl daemon-reload
+sudo /bin/systemctl enable grafana-server
+sudo /bin/systemctl start grafana-server
+
+By default grafana running on the port number 3000
+
+username: admin
+password: admin 
+
+setup new password for it
+
+Step 2: Create a Datasource for monitoring the Github Account Repository:
+
+Grafana --> Data Sources --> find more data source plugins --> Github --> Install
+
+After installing the plugin  &  Create a token in the Github Repo with below permissions:
+--> repo
+--> admin:org --> read:org
+--> admin:repo_hook --> read:repo_hook
+--> user --> read:user & user:email
+--> admin:enterprise --> read:enterprise
+--> audit_log --> read:audit_log
+--> project --> read:project   & generate token with these permissions
+
+
+Now Create a Data Source in the Grafana 
+- Add Data source --> select Github --> Give name or default name is also fine 
+- Remain default settings & 
+- Connection through PAT(Personal Access Token) 
+- Additional Settings --> Github License --> Basic or Enterprize (select one) --> Save & test
+
+& 
+
+Now Create a Dashboard Manauly or Import with the ID
+=====================================================
+Below is the link to import the Dashboard with ID: 
+https://grafana.com/grafana/dashboards/14000-github-default/
+
+Copy the ID & Go to Dashboard in Grafana & Click on Import & Paste the ID in (Find & import dashboards for common applications at grafana.com/dashboards:) --> Load
+
+Importing dashboard from Grafana.com
+Options --> Name: DevOps_Github_Repo
+Github --> Select the Github Data Source  --> Import
+
+Note: By Deafult we did not get the Github Data 
+ * We need to select our Github by aading the Datasource & Organization name or Github Username & Repository & Branch(For EX: main) & select Duration of Time.
+
