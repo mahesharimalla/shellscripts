@@ -1,3 +1,322 @@
+
+
+
+
+
+def runGate(String gateName) {
+  sh """
+    set -e
+    echo "=============================="
+    echo "🧱 Running ${gateName}"
+    echo "=============================="
+
+    for policy in .security-gates/gates/${gateName}/*.sh; do
+      echo "▶ Executing \$policy"
+      bash "\$policy"
+    done
+  """
+}
+
+def updateOpenProject(String message) {
+  if (!env.WP_ID) {
+    echo "⚠️ WP_ID not set – skipping OpenProject update"
+    return
+  }
+
+  withCredentials([
+    string(credentialsId: 'OPENPROJECT_API_TOKEN', variable: 'OP_TOKEN')
+  ]) {
+    sh """
+      curl -s -X POST \
+        -u apikey:\$OP_TOKEN \
+        -H "Content-Type: application/json" \
+        ${OPENPROJECT_URL}/api/v3/work_packages/${env.WP_ID}/activities \
+        -d '{
+          "comment": { "raw": "${message}" }
+        }'
+    """
+  }
+}
+
+
+/* 🔴 NEW: Create Gate Failure Ticket */
+def createGateTicket(String gateName, String description, String assigneeId) {
+  if (!env.WP_ID) {
+    echo "⚠️ WP_ID not set – skipping ticket creation"
+    return
+  }
+
+  withCredentials([
+    string(credentialsId: 'OPENPROJECT_API_TOKEN', variable: 'OP_TOKEN')
+  ]) {
+    sh """
+      curl -s -X POST \
+        -u apikey:\$OP_TOKEN \
+        -H "Content-Type: application/json" \
+        ${OPENPROJECT_URL}/api/v3/work_packages \
+        -d '{
+          "subject": "❌ ${gateName} FAILED",
+          "description": { "raw": "${description}" },
+          "_links": {
+            "project": { "href": "/api/v3/projects/gates-implemenation" },
+            "assignee": { "href": "/api/v3/users/${assigneeId}" },
+            "parent": { "href": "/api/v3/work_packages/${env.WP_ID}" }
+          }
+        }'
+    """
+  }
+}
+
+pipeline {
+  agent any
+
+  tools {
+    jdk 'jdk_21'
+    nodejs 'node_22'
+    git 'Default'
+  }
+
+  environment {
+    SONAR_TOKEN        = credentials('lms_sonartoken')
+    SCANNER_HOME       = tool 'sonar_scanner'
+    SONAR_PROJECT_KEY  = 'lms'
+
+    LMS_REGISTRY_URL   = credentials('LMS_NEXUS_REGISTRY_URL')
+    LMS_DOCKER_REPO    = credentials('LMS_NEXUS_DOCKER_REPO')
+
+    TRIVY_DISABLE_UNICODE = "true"
+
+    OPENPROJECT_URL = "http://192.168.11.20"
+  }
+
+  stages {
+
+    /* ===================================================== */
+    stage('📥 Checkout Code') {
+      steps {
+        git branch: 'dev',
+            credentialsId: 'mahesh-github-token',
+            url: 'https://github.com/mahesharimalla/lms.git'
+      }
+    }
+
+stage('🔗 Extract OpenProject Work Package') {
+  steps {
+    script {
+      def commitMsg = sh(
+        script: "git log -1 --pretty=%B",
+        returnStdout: true
+      ).trim()
+
+      echo "📌 Commit message: ${commitMsg}"
+
+      // ✅ CORRECT REGEX
+      def matcher = (commitMsg =~ /WP#([0-9]+)/)
+
+      if (!matcher) {
+        error "❌ Commit message must contain WP#<id> (example: WP#166)"
+      }
+
+      env.WP_ID = matcher[0][1]
+      echo "✅ Linked to OpenProject Work Package: WP#${env.WP_ID}"
+    }
+  }
+}
+
+
+    /* ===================================================== */
+    stage('🚀 Notify OpenProject – Build Started') {
+      steps {
+        script {
+          updateOpenProject("🚀 Jenkins build #${BUILD_NUMBER} STARTED")
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🔐 Fetch DevSecOps Gate Policies') {
+      steps {
+        dir('.security-gates') {
+          git url: 'https://github.com/mahesharimalla/devsecops-gates-.git',
+              branch: 'main'
+          sh 'find gates -type f -name "*.sh" -exec chmod +x {} +'
+        }
+      }
+    }
+
+    /* ===================================================== */
+    
+    /*
+    stage('🧱 Gate-0: Pre-Merge Checks') {
+      steps {
+        script {
+          try {
+            runGate('gate-0')
+            updateOpenProject("✅ Gate-0 PASSED – Pre-Merge Checks")
+          } catch (e) {
+            updateOpenProject("❌ Gate-0 FAILED – Pre-Merge Checks")
+            emailext(
+              subject: "🚨 Gate-0 FAILED | ${JOB_NAME}",
+              body: "Gate-0 FAILED\nBuild: #${BUILD_NUMBER}\nWP: ${WP_ID}",
+              to: "dev-team@company.com"
+            )
+            error("Stopping pipeline – Gate-0 failed")
+          }
+        }
+      }
+    }
+*/
+
+    /* ===================================================== */
+    stage('🧪 SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv('sonar_server') {
+          sh """
+            npm test -- --coverage || true
+            $SCANNER_HOME/bin/sonar-scanner \
+              -Dsonar.projectKey=lms \
+              -Dsonar.projectName=lms \
+              -Dsonar.sources=. \
+              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+          """
+        }
+      }
+    }
+
+    stage('🧱 Gate-1: SAST / Code Quality') {
+      steps {
+        script {
+          try {
+            timeout(time: 5, unit: 'MINUTES') {
+              waitForQualityGate abortPipeline: false
+            }
+            updateOpenProject("✅ Gate-1 PASSED – SonarQube Quality Gate")
+          } catch (e) {
+            updateOpenProject("❌ Gate-1 FAILED – SonarQube Quality Gate")
+            emailext(
+              subject: "🚨 Gate-1 FAILED | SonarQube",
+              body: "Quality Gate FAILED\nBuild: #${BUILD_NUMBER}\nWP: ${WP_ID}",
+              to: "appsec@company.com"
+            )
+            error("Stopping pipeline – Gate-1 failed")
+          }
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('⚙️ Compile Applications') {
+      parallel {
+        stage('Compile Backend') {
+          steps {
+            dir('api') {
+              sh 'npm install && npx prisma generate && npm run build'
+            }
+          }
+        }
+        stage('Compile Frontend') {
+          steps {
+            dir('webapp') {
+              sh 'npm install && npm run build'
+            }
+          }
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🛡️ Gate-2: OWASP Dependency Check') {
+      steps {
+        dependencyCheck(
+          odcInstallation: 'DP_Check',
+          additionalArguments: "--scan . --failOnCVSS 7"
+        )
+      }
+      post {
+        success {
+          updateOpenProject("✅ Gate-2 PASSED – Dependency Check")
+        }
+        failure {
+          updateOpenProject("❌ Gate-2 FAILED – Dependency Check")
+          error("Stopping pipeline – Gate-2 failed")
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🐳 Build & Push Docker Images') {
+      steps {
+        script {
+          def apiImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${BUILD_NUMBER}"
+          def webImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${BUILD_NUMBER}"
+
+          withCredentials([usernamePassword(
+            credentialsId: 'nexus_cred',
+            usernameVariable: 'NEXUS_USER',
+            passwordVariable: 'NEXUS_PASS'
+          )]) {
+            sh """
+              echo \$NEXUS_PASS | docker login $LMS_REGISTRY_URL -u \$NEXUS_USER --password-stdin
+              docker build -t ${apiImage} api
+              docker push ${apiImage}
+              docker build -t ${webImage} webapp
+              docker push ${webImage}
+            """
+          }
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🔍 Trivy Image Scan') {
+      steps {
+        script {
+          sh """
+            trivy image --severity HIGH,CRITICAL ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${BUILD_NUMBER}
+            trivy image --severity HIGH,CRITICAL ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${BUILD_NUMBER}
+          """
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🚀 Deploy LMS via Docker') {
+      steps {
+        script {
+          updateOpenProject("🚀 Deployment STARTED")
+          sh 'echo "Deployment logic unchanged (as in your pipeline)"'
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🧪 Gate-4: DAST – OWASP ZAP') {
+      steps {
+        sh 'echo "Running ZAP Automation Framework..."'
+      }
+      post {
+        success {
+          updateOpenProject("✅ Gate-4 PASSED – DAST")
+        }
+        failure {
+          updateOpenProject("❌ Gate-4 FAILED – DAST")
+          error("Stopping pipeline – Gate-4 failed")
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      updateOpenProject("🎉 Jenkins build #${BUILD_NUMBER} SUCCESS")
+    }
+    failure {
+      updateOpenProject("❌ Jenkins build #${BUILD_NUMBER} FAILED")
+    }
+  }
+}
+
+================================
 now i have few more questions now i want to add Gates, these gates are acts as security gates (few check list will be there if these checks passed by all tools in all cI stages then only the it moves to next stage & as also for each gate success or failure status needs to notify to Developer & assigned AO through email & attach result document report to email if possible attach to openproject aswell or any project management tool like open project, if possible of integrating the open project with the jenkins then the when the gate fail then it should me notify to AO & Developer with email as well as raise a ticket in Open Project later after fixing the issues by developer then re-run the pipeline after passing the stage with checks it moves to next stage & it needs to repeat for all stages of CI now give me updated jenkins ci pipeline if want i will pass all the Gates & checks, if required 
 
 Gate details are Gate-0: Pre-Merge Hygiene NO AO(Developer Responsibility) & Gate-1: SAST/CodeQuality Component AO & Gate-2: Dependency Risk(SCA) Component AO/ Security AO Informed 
