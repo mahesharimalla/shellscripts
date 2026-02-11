@@ -1,8 +1,3 @@
-
-
-
-
-
 def runGate(String gateName) {
   sh """
     set -e
@@ -67,37 +62,32 @@ def createGateTicket(String gateName, String description, String assigneeId) {
   }
 }
 
+
 pipeline {
-  agent any
-
-  tools {
-    jdk 'jdk_21'
-    nodejs 'node_22'
-    git 'Default'
-  }
-
-  environment {
-    SONAR_TOKEN        = credentials('lms_sonartoken')
-    SCANNER_HOME       = tool 'sonar_scanner'
-    SONAR_PROJECT_KEY  = 'lms'
-
-    LMS_REGISTRY_URL   = credentials('LMS_NEXUS_REGISTRY_URL')
-    LMS_DOCKER_REPO    = credentials('LMS_NEXUS_DOCKER_REPO')
-
-    TRIVY_DISABLE_UNICODE = "true"
-
-    OPENPROJECT_URL = "http://192.168.11.20"
-  }
-
-  stages {
-
-    /* ===================================================== */
-    stage('📥 Checkout Code') {
-      steps {
-        git branch: 'dev',
-            credentialsId: 'mahesh-github-token',
-            url: 'https://github.com/mahesharimalla/lms.git'
-      }
+    agent any
+tools {
+        jdk 'jdk_21'
+        nodejs 'node_22'
+        
+    }
+    
+     environment {
+       SONAR_TOKEN     = credentials('awrs_sonartoken')
+       SCANNER_HOME    = tool 'sonar_scanner'
+        LMS_REGISTRY_URL = credentials('LMS_NEXUS_REGISTRY_URL')
+        LMS_DOCKER_REPO  = credentials('LMS_NEXUS_DOCKER_REPO')
+        LMS_PROJECT_NAME = credentials('LMS_NEXUS_PROJECT')
+        TRIVY_DISABLE_UNICODE = "true"
+        OPENPROJECT_URL = "http://192.168.11.20"
+    }
+    
+    stages {
+        stage('📥 Checkout Code') {
+        steps {
+            git branch: 'mahesh/gitlint-gitleaks',
+                credentialsId: 'awrs-git-cred',
+                url: 'https://github.com/pranudevsec/new-awrs.git'
+        }
     }
 
 stage('🔗 Extract OpenProject Work Package') {
@@ -137,53 +127,221 @@ stage('🔗 Extract OpenProject Work Package') {
     stage('🔐 Fetch DevSecOps Gate Policies') {
       steps {
         dir('.security-gates') {
-          git url: 'https://github.com/mahesharimalla/devsecops-gates-.git',
+          git url: 'https://github.com/pranudevsec/devsecops-gates.git',
               branch: 'main'
           sh 'find gates -type f -name "*.sh" -exec chmod +x {} +'
         }
       }
     }
 
-    /* ===================================================== */
-    
-    /*
-    stage('🧱 Gate-0: Pre-Merge Checks') {
+
+
+ stage('Git Debug') {
       steps {
-        script {
-          try {
-            runGate('gate-0')
-            updateOpenProject("✅ Gate-0 PASSED – Pre-Merge Checks")
-          } catch (e) {
-            updateOpenProject("❌ Gate-0 FAILED – Pre-Merge Checks")
-            emailext(
-              subject: "🚨 Gate-0 FAILED | ${JOB_NAME}",
-              body: "Gate-0 FAILED\nBuild: #${BUILD_NUMBER}\nWP: ${WP_ID}",
-              to: "dev-team@company.com"
-            )
-            error("Stopping pipeline – Gate-0 failed")
-          }
-        }
+        sh '''
+          echo "===== GIT DEBUG INFO ====="
+          git status
+          git branch --show-current
+          git branch -a
+          git remote -v
+          git branch -r --contains HEAD
+          git log -1 --oneline
+        '''
       }
+ }
+
+  
+stage('Gate-0A: Gitleaks – Secret Detection') {
+  options { timeout(time: 5, unit: 'MINUTES') }
+
+  steps {
+    sh '''
+      set -e
+      echo "🔍 Gitleaks: scanning source directories"
+
+      mkdir -p security-reports/gitleaks
+
+      gitleaks detect \
+        --source backend \
+        --source frontend \
+        --no-git \
+        --config .gitleaks.toml \
+        --redact \
+        --report-format json \
+        --report-path security-reports/gitleaks/report.json
+    '''
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/gitleaks/report.json', fingerprint: true
     }
+  }
+}
+
+
+
+
+
+
+/*
+stage('Gate-0B: TruffleHog – Verified Secrets') {
+  steps {
+    script {
+      sh '''
+        echo "🔍 TruffleHog: scanning for verified secrets"
+
+        mkdir -p security-reports/trufflehog
+
+        set +e
+        trufflehog filesystem backend frontend \
+          --only-verified \
+          --no-update \
+          --exclude-paths node_modules,dist,build,target,coverage,security-reports \
+          --json | tee security-reports/trufflehog/report.json
+
+        set -e
+
+        # Fail ONLY if verified secrets exist
+        FINDINGS=$(jq 'length' security-reports/trufflehog/report.json 2>/dev/null || echo 0)
+
+        if [ "$FINDINGS" -gt 0 ]; then
+          echo "❌ Verified secrets detected by TruffleHog"
+          exit 1
+        fi
+
+        echo "✅ No verified secrets found"
+      '''
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/trufflehog/*', fingerprint: true
+    }
+    failure {
+      error('❌ Gate-0B FAILED – Verified secrets detected')
+    }
+  }
+}
 */
 
-    /* ===================================================== */
-    stage('🧪 SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv('sonar_server') {
-          sh """
-            npm test -- --coverage || true
-            $SCANNER_HOME/bin/sonar-scanner \
-              -Dsonar.projectKey=lms \
-              -Dsonar.projectName=lms \
-              -Dsonar.sources=. \
-              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-          """
-        }
-      }
-    }
+stage('Gate-0B: TruffleHog – Verified Secrets') {
+  options { timeout(time: 5, unit: 'MINUTES') }
 
-    stage('🧱 Gate-1: SAST / Code Quality') {
+  steps {
+    sh '''
+      set -e
+      echo "🔍 TruffleHog: scanning for verified secrets"
+
+      mkdir -p security-reports/trufflehog
+
+      trufflehog filesystem backend frontend \
+        --only-verified \
+        --no-update \
+        --exclude-paths node_modules,dist,build,target,coverage,security-reports \
+        --json > security-reports/trufflehog/report.json || true
+
+      FINDINGS=$(grep -c '"SourceMetadata"' security-reports/trufflehog/report.json || true)
+
+      if [ "$FINDINGS" -gt 0 ]; then
+        echo "❌ Verified secrets detected"
+        exit 1
+      fi
+
+      echo "✅ No verified secrets found"
+    '''
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/trufflehog/report.json', fingerprint: true
+    }
+  }
+}
+
+
+
+
+/*
+stage('Gate-0C: Semgrep – Org Secret Policy') {
+  steps {
+    sh '''
+      set -e
+      echo "🔍 Semgrep: enforcing org policy"
+
+      mkdir -p security-reports/semgrep
+
+      docker run --rm \
+        -v "$PWD:/src" \
+        returntocorp/semgrep \
+        semgrep scan \
+          --config /src/semgrep/org-policy.yml \
+          --json \
+          --output /src/security-reports/semgrep/report.json
+    '''
+  }
+}   
+
+*/
+
+
+
+    
+       
+  stage('Compile Applications & Install the dependencies') {
+    parallel {
+        stage('Compile Backend') {
+            steps {
+                dir('backend') {
+                    sh '''
+                      npm install
+                    '''
+                }
+            }
+        }
+
+        stage('Compile Frontend & Install the dependencies') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                      npm install
+                      npm run build
+                    '''
+                }
+            }
+        }
+    }
+}
+
+/*
+stage('📦 Install Dependencies') {
+            steps {
+                sh '''
+                    echo "📦 Installing dependencies..."
+                    cd backend && npm install --no-audit && cd ..
+                    cd frontend && npm install --no-audit && cd ..
+                '''
+            }
+        }
+ 
+
+*/
+
+stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \\
+                           -Dsonar.projectName=awrs-1  \\
+                           -Dsonar.sources=. \\
+                           -Dsonar.projectKey=awrs-1 '''
+                }
+            }
+        }
+
+
+
+stage('🧱 Gate-1: SAST / Code Quality') {
       steps {
         script {
           try {
@@ -204,117 +362,350 @@ stage('🔗 Extract OpenProject Work Package') {
       }
     }
 
-    /* ===================================================== */
-    stage('⚙️ Compile Applications') {
-      parallel {
-        stage('Compile Backend') {
-          steps {
-            dir('api') {
-              sh 'npm install && npx prisma generate && npm run build'
-            }
-          }
-        }
-        stage('Compile Frontend') {
-          steps {
-            dir('webapp') {
-              sh 'npm install && npm run build'
-            }
-          }
-        }
-      }
-    }
 
-    /* ===================================================== */
-    stage('🛡️ Gate-2: OWASP Dependency Check') {
-      steps {
+
+//Fail build if any CVE has a CVSS score of 8 or higher
+stage('🛡️ Gate-2: OWASP Dependency Check') {
+    steps {
+        echo "🔍 Running OWASP Dependency-Check with Quality Gates..."
+
         dependencyCheck(
-          odcInstallation: 'DP_Check',
-          additionalArguments: "--scan . --failOnCVSS 7"
-        )
-      }
-      post {
-        success {
-          updateOpenProject("✅ Gate-2 PASSED – Dependency Check")
-        }
-        failure {
-          updateOpenProject("❌ Gate-2 FAILED – Dependency Check")
-          error("Stopping pipeline – Gate-2 failed")
-        }
-      }
-    }
-
-    /* ===================================================== */
-    stage('🐳 Build & Push Docker Images') {
-      steps {
-        script {
-          def apiImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${BUILD_NUMBER}"
-          def webImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${BUILD_NUMBER}"
-
-          withCredentials([usernamePassword(
-            credentialsId: 'nexus_cred',
-            usernameVariable: 'NEXUS_USER',
-            passwordVariable: 'NEXUS_PASS'
-          )]) {
-            sh """
-              echo \$NEXUS_PASS | docker login $LMS_REGISTRY_URL -u \$NEXUS_USER --password-stdin
-              docker build -t ${apiImage} api
-              docker push ${apiImage}
-              docker build -t ${webImage} webapp
-              docker push ${webImage}
+            odcInstallation: 'DP_Check',
+            additionalArguments: """
+                --project demo-new-awrs
+                --scan .
+                --format CSV
+                --fromat HTML
+                --failOnCVSS 8 
             """
-          }
-        }
-      }
+        )
+
+        dependencyCheckPublisher(
+            pattern: '**/dependency-check-report.xml'
+        )
     }
 
-    /* ===================================================== */
-    stage('🔍 Trivy Image Scan') {
-      steps {
-        script {
-          sh """
-            trivy image --severity HIGH,CRITICAL ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-api:${BUILD_NUMBER}
-            trivy image --severity HIGH,CRITICAL ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/lms-webapp:${BUILD_NUMBER}
-          """
-        }
-      }
-    }
-
-    /* ===================================================== */
-    stage('🚀 Deploy LMS via Docker') {
-      steps {
-        script {
-          updateOpenProject("🚀 Deployment STARTED")
-          sh 'echo "Deployment logic unchanged (as in your pipeline)"'
-        }
-      }
-    }
-
-    /* ===================================================== */
-    stage('🧪 Gate-4: DAST – OWASP ZAP') {
-      steps {
-        sh 'echo "Running ZAP Automation Framework..."'
-      }
-      post {
+    post {
         success {
-          updateOpenProject("✅ Gate-4 PASSED – DAST")
+            echo "✅ Dependency-Check PASSED (No HIGH / CRITICAL vulnerabilities)"
         }
+
         failure {
-          updateOpenProject("❌ Gate-4 FAILED – DAST")
-          error("Stopping pipeline – Gate-4 failed")
+            echo "❌ Dependency-Check FAILED (HIGH / CRITICAL vulnerabilities found)"
+
+            emailext(
+                subject: "🚨 OWASP Dependency Check FAILED | Pipeline Stopped",
+                body: """
+OWASP Dependency-Check FAILED.
+
+❌ HIGH / CRITICAL vulnerabilities detected
+❌ Pipeline STOPPED
+
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+""",
+                to: 'security-ao@company.com'
+            )
         }
+    }
+}
+
+
+
+
+stage('Build Docker Images') {
+  steps {
+    script {
+      def backendImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+
+
+        sh """
+echo "🧹 Cleaning old awrs-backend images..."
+docker images "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend" \
+  --format "{{.Repository}}:{{.Tag}}" \
+  | grep -v "${BUILD_NUMBER}" \
+  | xargs -r docker rmi -f
+
+
+echo "🛠️ Building API image"
+docker build --no-cache -t ${backendImage} ./backend
+"""
+
+        sh """
+echo "🧹 Cleaning old awrs-frontend images..."
+docker images "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend" \
+  --format "{{.Repository}}:{{.Tag}}" \
+  | grep -v "${BUILD_NUMBER}" \
+  | xargs -r docker rmi -f
+
+
+echo "🛠️ Building WebApp image"
+docker build --no-cache -t ${frontendImage} ./frontend
+"""
+
       }
+    }
+  }
+}
+
+stage('SBOM Generation (Syft)') {
+  steps {
+    script {
+      def backendImage  = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${env.BUILD_NUMBER}"
+
+      sh '''
+        set -eu
+
+        echo "🧹 Cleaning old SBOM reports..."
+        rm -rf sbom
+        mkdir -p sbom
+
+        echo "🧾 Generating SBOM for Backend image..."
+        syft ''' + backendImage + ''' -o spdx-json > sbom/awrs-backend-''' + env.BUILD_NUMBER + '''-sbom.json
+
+        echo "🧾 Generating SBOM for Frontend image..."
+        syft ''' + frontendImage + ''' -o spdx-json > sbom/awrs-frontend-''' + env.BUILD_NUMBER + '''-sbom.json
+      '''
     }
   }
 
   post {
-    success {
-      updateOpenProject("🎉 Jenkins build #${BUILD_NUMBER} SUCCESS")
-    }
-    failure {
-      updateOpenProject("❌ Jenkins build #${BUILD_NUMBER} FAILED")
+    always {
+      archiveArtifacts artifacts: 'sbom/*.json', fingerprint: true
     }
   }
 }
+
+
+
+
+//should add --exit-code 1 after --severity tag
+stage('Gate:3 Trivy Docker Image Scan') {
+  steps {
+    script { 
+      def backendImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${env.BUILD_NUMBER}"
+
+      sh """
+        echo "🔎 Scanning API image with Trivy..."
+        trivy image \
+          --severity HIGH,CRITICAL \
+          --exit-code 1 \
+          --format json \
+          --output trivy-api-report.json \
+          --quiet \
+          ${backendImage}
+
+        echo "🔎 Scanning WebApp image with Trivy..."
+        trivy image \
+          --severity HIGH,CRITICAL \
+          --format json \
+          --output trivy-webapp-report.json \
+          --quiet \
+          ${frontendImage}
+      """
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'trivy-*-report.json', fingerprint: true
+    }
+  }
+}
+
+
+
+
+stage('Push Docker Images') {
+  steps {
+    script {
+      def backendImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh """
+echo "📤 Pushing API image"
+docker push ${backendImage}
+"""
+
+        sh """
+echo "📤 Pushing WebApp image"
+docker push ${frontendImage}
+"""
+
+      }
+    }
+  }
+}
+
+   
+
+
+stage('🚀 Deploy LMS via Docker Run (Secure)') {
+  steps {
+    script {
+      withCredentials([
+        usernamePassword(
+          credentialsId: 'nexus_cred',
+          usernameVariable: 'NEXUS_USERNAME',
+          passwordVariable: 'NEXUS_PASSWORD'
+        )
+      ]) {
+
+        sh '''
+          set -e
+
+          echo "🔐 Logging in to Nexus Docker Registry"
+          echo "$NEXUS_PASSWORD" | docker login \
+            $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" \
+            --password-stdin
+
+          echo "🔧 Ensuring Docker network exists"
+          docker network inspect awrs-net >/dev/null 2>&1 || docker network create awrs-net
+
+          echo "🧹 Removing old containers (safe re-deploy)"
+          docker rm -f awrs-postgres awrs-backend awrs-frontend >/dev/null 2>&1 || true
+
+          echo "🐘 Starting PostgreSQL"
+          docker run -d \
+            --name awrs-postgres \
+            --network awrs-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/postgres.env \
+            -v awrs-db-data:/var/lib/postgresql/data \
+            postgres:15
+
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in {1..20}; do
+            if docker exec awrs-postgres pg_isready -U postgres >/dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🚀 Starting LMS Backend API"
+          docker pull ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${BUILD_NUMBER}
+
+          docker run -d \
+            --name awrs-backend \
+            --network awrs-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/backend.env \
+            -p 8386:8386 \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-backend:${BUILD_NUMBER}
+
+          echo "⏳ Waiting for Backend API to be healthy..."
+          for i in {1..20}; do
+            if curl -fs http://127.0.0.1:8386/health >/dev/null; then
+              echo "✅ Backend API is healthy"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🌐 Starting LMS Frontend"
+          docker pull ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${BUILD_NUMBER}
+
+          docker run -d \
+            --name awrs-frontend \
+            --network awrs-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/frontend.env \
+            -p 8001:80 \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/awrs-frontend:${BUILD_NUMBER}
+
+          echo "🎉 LMS Deployment Completed Successfully"
+
+          echo "🔓 Logging out from Nexus"
+          docker logout $LMS_REGISTRY_URL
+        '''
+      }
+    }
+  }
+}
+
+stage('Gate-4: DAST - OWASP ZAP (Automation Framework)') {
+  steps {
+    sh '''
+      #!/bin/bash
+      set -eu 
+      echo "🧹 Cleaning old ZAP reports..."
+      rm -rf zap-report/*
+      mkdir -p zap-report
+      chmod 777 zap-report
+
+      echo "🔍 Running OWASP ZAP Automation Framework..."
+
+      docker run --rm \
+        --network host \
+        -v "$WORKSPACE/zap-report:/zap/wrk" \
+        -v "$WORKSPACE/zap/zap-automation.yaml:/zap/zap-automation.yaml" \
+        zaproxy/zap-weekly \
+        zap.sh -cmd -port 8091 -autorun /zap/zap-automation.yaml
+    '''
+  }
+
+  post {
+    always {
+      echo "📊 Publishing OWASP ZAP report..."
+      publishHTML(target: [
+        reportDir: 'zap-report',
+        reportFiles: 'zap-report.html',
+        reportName: 'OWASP ZAP DAST Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: true
+      ])
+    }
+    failure {
+      echo '❌ Gate-4 FAILED – High/Critical DAST vulnerabilities detected'
+    }
+    success {
+      echo '✅ Gate-4 PASSED – DAST security gate cleared'
+    }
+  }
+}
+
+    } // end stages
+
+    post {
+        success {
+            updateOpenProject("🎉 Jenkins build #${BUILD_NUMBER} SUCCESS")
+        }
+        failure {
+            updateOpenProject("❌ Jenkins build #${BUILD_NUMBER} FAILED")
+        }
+    }
+
+} // end pipeline
 
 ================================
 now i have few more questions now i want to add Gates, these gates are acts as security gates (few check list will be there if these checks passed by all tools in all cI stages then only the it moves to next stage & as also for each gate success or failure status needs to notify to Developer & assigned AO through email & attach result document report to email if possible attach to openproject aswell or any project management tool like open project, if possible of integrating the open project with the jenkins then the when the gate fail then it should me notify to AO & Developer with email as well as raise a ticket in Open Project later after fixing the issues by developer then re-run the pipeline after passing the stage with checks it moves to next stage & it needs to repeat for all stages of CI now give me updated jenkins ci pipeline if want i will pass all the Gates & checks, if required 
