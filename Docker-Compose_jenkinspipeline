@@ -1,0 +1,44 @@
+/*
+sh '''
+#!/bin/bash
+set -e
+set +x
+
+echo "📂 Jenkins workspace:"
+pwd
+ls -la
+
+
+echo "📁 Verifying docker-compose.yml"
+ls -l docker-compose.yml
+
+echo "🔐 Docker login"
+echo "$NEXUS_PASSWORD" | docker login "$LMS_REGISTRY_URL" \
+  -u "$NEXUS_USERNAME" --password-stdin
+
+export backendImage="$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/awrs-backend:$BUILD_NUMBER"
+export frontendImage="$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/awrs-frontend:$BUILD_NUMBER"
+
+echo "🧹 Cleaning old containers"
+docker compose down || true
+
+echo "📥 Pulling latest images"
+docker compose pull
+
+echo "🚀 Starting services"
+docker compose up -d
+
+echo "📊 Container status"
+docker ps
+'''
+*/
+
+
+/*
+echo "🗄️ Running Prisma migrations (one-time)..."
+docker run --rm \
+  --network awrs-net \
+  -e DATABASE_URL="postgresql://postgres:postgres123@awrs-postgres:5432/mydb" \
+  "$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/awrs-backend:$BUILD_NUMBER" \
+  npx prisma migrate deploy 
+  */
