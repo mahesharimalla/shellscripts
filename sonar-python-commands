@@ -1,0 +1,114 @@
+cosign generate-key-pair
+  517  cosign --help
+  518  cosign generate-key-pair
+  519  cosign generate-key-pair --output-key-prefix john-doe
+  520  sudo cosign generate-key-pair --output-key-prefix john-doe
+  521  cd
+  522  sudo useradd --no-create-home --shell /bin/false prometheus
+  523  sudo mkdir /etc/prometheus
+  524  sudo mkdir /var/lib/prometheus
+  525  sudo chown prometheus:prometheus /etc/prometheus
+  526  sudo chown prometheus:prometheus /var/lib/prometheus
+  527  wget https://github.com/prometheus/prometheus/releases/latest/download/prometheus-2.52.0.linux-amd64.tar.gz
+  528  wget https://github.com/prometheus/prometheus/releases/download/v3.9.1/prometheus-3.9.1.linux-amd64.tar.gz
+  529  tar -xvf prometheus-3.9.1.linux-amd64.tar.gz
+  530  sudo systemctl status prometheus
+  531  which prometheus
+  532  ls /opt/prometheus
+  533  sudo mv prometheus-3.9.1.linux-amd64 /opt/prometheus
+  534  ls /opt/prometheus
+  535  sudo mkdir /opt/prometheus/data
+  536  sudo useradd --no-create-home --shell /bin/false prometheus
+  537  sudo chown -R prometheus:prometheus /opt/prometheus
+  538  sudo nano /etc/systemd/system/prometheus.service
+  539  sudo systemctl daemon-reload
+  540  sudo systemctl start prometheus
+  541  sudo systemctl enable prometheus
+  542  sudo systemctl status prometheus
+  543  sudo journalctl -u prometheus --no-pager -n 50
+  544  sudo ss -tulnp | grep 9090
+  545  curl http://localhost:9090/-/healthy
+  546  sudo systemctl status prometheus
+  547  sudo systemctl restart prometheus
+  548  sudo systemctl status prometheus
+  549  sudo journalctl -u prometheus --no-pager -n 30
+  550  sudo pkill prometheus
+  551  sudo ss -tulnp | grep 9090
+  552  sudo kill -9 602443
+  553  sudo systemctl reset-failed prometheus
+  554  sudo systemctl start prometheus
+  555  sudo systemctl status prometheus
+  556  sudo systemctl reset-failed prometheus
+  557  sudo systemctl reset prometheus
+  558  sudo systemctl restart prometheus
+  559  sudo systemctl status prometheus
+  560  sudo ss -tulnp | grep 9090
+  561  sudo pkill -9 prometheus
+  562  sudo ss -tulnp | grep 9090
+  563  dpkg -l | grep prometheus
+  564  systemctl list-units --type=service | grep prometheus
+  565  sudo systemctl stop prometheus
+  566  sudo systemctl disable prometheus
+  567  sudo pkill -9 prometheus
+  568  ps -ef | grep prometheus
+  569  sudo ss -tulnp | grep 9090
+  570  sudo nano /etc/systemd/system/prometheus.service
+  571  sudo systemctl daemon-reload
+  572  sudo systemctl start prometheus
+  573  sudo systemctl status prometheus
+  574  sudo nano /opt/prometheus/prometheus.yml
+  575  sudo systemctl restart prometheus
+  576  sudo systemctl status prometheus
+  577  /opt/prometheus/promtool check config /opt/prometheus/prometheus.yml
+  578  sudo nano /opt/prometheus/prometheus.yml
+  579  cat /opt/prometheus/prometheus.yml
+  580  sudo nano /opt/prometheus/prometheus.yml
+  581  sudo systemctl restart prometheus
+  582  sudo systemctl status prometheus
+  583  cd /opt
+  584  sudo wget https://github.com/dmeiners88/sonarqube_exporter/releases/latest/download/sonarqube_exporter-linux-amd64
+  585  sudo mv sonarqube_exporter-linux-amd64 sonarqube_exporter
+  586  sudo chmod +x sonarqube_exporter
+  587  cd /opt
+  588  sudo wget https://github.com/bellingard/sonar-prometheus-exporter/releases/latest/download/sonar-prometheus-exporter-linux-amd64
+  589  sudo nano /opt/sonar_exporter.py
+  590  python3 /opt/sonar_exporter.py
+  591  sudo apt update
+  592  sudo apt install python3-pip -y
+  593  pip3 install prometheus_client flask requests
+  594  sudo apt install python3-venv python3-full -y
+  595  docker ps
+  596  docker images
+  597  docker rmi bfe2823c3b75
+  598  docker rmi ed8a17b9c614
+  599  docker rmi 82e9efccebad
+  600  docker rmi 265f94cd9821
+  601  docker rmi be9ded51bd62
+  602  docker rmi 8405eb420253
+  603  docker rmi f80bb176e105
+  604  docker rmi fa87a678e26a
+  605  docker rmi 5d728eb69139
+  606  docker rmi 3d21fe83cbb4
+  607  docker rmi bfe2823c3b75
+  608  docker rmi 8e4eaea4836b
+  609  cd /opt
+  610  sudo python3 -m venv sonar_env
+  611  source /opt/sonar_env/bin/activate
+  612  pip install flask requests prometheus_client
+  613  sudo rm -rf /opt/sonar_env
+  614  cd /opt
+  615  python3 -m venv sonar_env
+  616  cd ~
+  617  python3 -m venv sonar_env
+  618  source ~/sonar_env/bin/activate
+  619  pip install flask requests prometheus_client
+  620  python /opt/sonar_exporter.py
+  621  sudo nano /etc/systemd/system/sonar_exporter.service
+  622  sudo systemctl daemon-reload
+  623  sudo systemctl start sonar_exporter
+  624  sudo systemctl enable sonar_exporter
+  625  sudo systemctl status sonar_exporter
+  626  sudo nano /opt/prometheus/prometheus.yml
+  627  /opt/prometheus/promtool check config /opt/prometheus/prometheus.yml
+  628  sudo systemctl restart prometheus
+  629  history
