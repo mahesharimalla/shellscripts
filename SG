@@ -1,3 +1,1959 @@
+
+latest:
+/*
+def runGate(String gateName) {
+  sh """
+    set -e
+    echo "=============================="
+    echo "🧱 Running ${gateName}"
+    echo "=============================="
+
+    for policy in .security-gates/gates/${gateName}/*.sh; do
+      echo "▶ Executing \$policy"
+      bash "\$policy"
+    done
+  """
+}
+
+*/
+
+
+/*
+def runGate(String scriptPath) {
+  sh """
+    set -e
+    echo "=============================="
+    echo "▶ Executing ${scriptPath}"
+    echo "=============================="
+    bash .security-gates/gates/${scriptPath}
+  """
+}
+*/
+
+def runGate(String gateName) {
+  sh """
+    set -e
+
+    GATE_DIR=".security-gates/gates/${gateName}"
+
+    if [ ! -d "\$GATE_DIR" ]; then
+      echo "❌ Gate directory not found: \$GATE_DIR"
+      exit 2
+    fi
+
+    echo "=============================="
+    echo "🧱 Running ${gateName}"
+    echo "=============================="
+
+    for policy in \$(ls \$GATE_DIR/*.sh 2>/dev/null | sort); do
+      echo "▶ Executing \$policy"
+      bash "\$policy"
+    done
+  """
+}
+
+
+
+def updateOpenProject(String message) {
+  if (!env.WP_ID) {
+    echo "⚠️ WP_ID not set – skipping OpenProject update"
+    return
+  }
+
+  withCredentials([string(credentialsId: 'OPENPROJECT_API_TOKEN', variable: 'OP_TOKEN')]) {
+    sh """
+      curl -s -X POST \
+        -u apikey:\$OP_TOKEN \
+        -H "Content-Type: application/json" \
+        ${OPENPROJECT_URL}/api/v3/work_packages/${env.WP_ID}/activities \
+        -d '{
+          "comment": {
+            "format": "markdown",
+            "raw": "${message}"
+          }
+        }'
+    """
+  }
+}
+
+ def createGateTicket(String gateName, String description, String assigneeId = "", String reportPattern = "") {
+
+  if (!env.WP_ID) {
+    echo "⚠️ WP_ID not set – skipping ticket creation"
+    return
+  }
+
+  withCredentials([string(credentialsId: 'OPENPROJECT_API_TOKEN', variable: 'OP_TOKEN')]) {
+
+    echo "🚨 Creating OpenProject failure ticket..."
+   echo "📌 Project ID: ${env.OPENPROJECT_PROJECT_ID}"
+    echo "📌 Type ID: ${env.OPENPROJECT_TYPE_ID}"
+
+    def payload = """
+    {
+      "subject": "❌ ${gateName} FAILED | Build #${BUILD_NUMBER}",
+      "description": {
+        "format": "markdown",
+        "raw": ${groovy.json.JsonOutput.toJson(description)}
+      },
+      "_links": {
+        "project": { "href": "/api/v3/projects/${env.OPENPROJECT_PROJECT_ID}" },
+        "type": { "href": "/api/v3/types/${env.OPENPROJECT_TYPE_ID}" },
+        "parent": { "href": "/api/v3/work_packages/${env.WP_ID}" }
+      }
+    }
+    """
+
+    echo "📦 Payload:"
+    echo payload
+
+    def response = sh(
+      script: """
+        curl -s -X POST \
+          -u apikey:\$OP_TOKEN \
+          -H "Content-Type: application/json" \
+          ${OPENPROJECT_URL}/api/v3/work_packages \
+          -d '${payload}'
+      """,
+      returnStdout: true
+    ).trim()
+
+    echo "📄 API Response: ${response}"
+
+    writeFile file: 'op_response.json', text: response
+
+def ticketId = sh(
+  script: "jq -r '.id' op_response.json",
+  returnStdout: true
+).trim()
+
+
+    if (!ticketId || ticketId == "null") {
+      error "❌ Ticket creation failed. Check API response."
+    }
+
+    echo "🎫 Ticket Created Successfully: ${ticketId}"
+
+    // Upload Reports
+    if (reportPattern?.trim()) {
+      sh """
+        for file in ${reportPattern}; do
+          if [ -f "\$file" ]; then
+            echo "📎 Uploading \$file..."
+
+            UPLOAD_RESPONSE=\$(curl -s -X POST \
+              -u apikey:\$OP_TOKEN \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @\$file \
+              "${OPENPROJECT_URL}/api/v3/uploads?filename=\$(basename \$file)")
+
+            UPLOAD_TOKEN=\$(echo \$UPLOAD_RESPONSE | jq -r '.token')
+
+            curl -s -X PATCH \
+              -u apikey:\$OP_TOKEN \
+              -H "Content-Type: application/json" \
+              ${OPENPROJECT_URL}/api/v3/work_packages/${ticketId} \
+              -d "{
+                \\"_links\\": {
+                  \\"attachments\\": [
+                    { \\"href\\": \\"/api/v3/uploads/\$UPLOAD_TOKEN\\" }
+                  ]
+                }
+              }"
+          fi
+        done
+      """
+    }
+
+    // 🔴 BLOCKING SECTION (OPTIONAL – CONTROLLED)
+    if (env.BLOCK_PIPELINE == "true") {
+
+      echo "⏳ Waiting for ticket #${ticketId} to be CLOSED..."
+
+      timeout(time: 4, unit: 'HOURS') {
+        waitUntil {
+          sleep 30
+
+          def status = sh(
+            script: """
+              curl -s -u apikey:\$OP_TOKEN \
+              ${OPENPROJECT_URL}/api/v3/work_packages/${ticketId} \
+              | jq -r '._links.status.title'
+            """,
+            returnStdout: true
+          ).trim()
+
+          echo "🔎 Current Ticket Status: ${status}"
+
+          return status in ["Closed", "Done", "Resolved"]
+        }
+      }
+
+      echo "✅ Ticket ${ticketId} closed. Pipeline Resuming..."
+    }
+  }
+}
+
+
+
+def buildGateMessage(String gateName, String stageName, String result, String remarks) {
+
+  return """
+## ${result == "SUCCESS" ? "✅" : "❌"} ${gateName} ${result}
+
+### 🔎 Execution Details
+- Gate Name: ${gateName}
+- Stage: ${stageName}
+- Job Name: ${env.JOB_NAME}
+- Build Number: #${env.BUILD_NUMBER}
+- Triggered By: ${env.BUILD_USER_ID ?: "System/SCM"}
+- Execution Time: ${new Date()}
+- Branch: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: "N/A"} 
+- Build URL: ${env.BUILD_URL}
+
+### Result
+${remarks}
+"""
+}
+
+
+
+
+pipeline {
+    agent any
+tools {
+        jdk 'jdk_21'
+        nodejs 'node_22'
+        
+    }
+    
+     environment {
+       SONAR_TOKEN     = credentials('citation-gates-sonartoken')
+       SCANNER_HOME    = tool 'sonar_scanner'
+        LMS_REGISTRY_URL = credentials('LMS_NEXUS_REGISTRY_URL')
+        LMS_DOCKER_REPO  = credentials('LMS_NEXUS_DOCKER_REPO')
+        LMS_PROJECT_NAME = credentials('LMS_NEXUS_PROJECT')
+        TRIVY_DISABLE_UNICODE = "true"
+        OPENPROJECT_URL = "http://192.168.11.20"
+        OPENPROJECT_PROJECT_ID = "53"
+        OPENPROJECT_TYPE_ID = "1"   // BUG type ID (confirm in OpenProject)
+        TARGET_IP = "192.168.11.18"
+    TARGET_PORT = "8001"
+        BLOCK_PIPELINE = "false"
+ENABLE_EMAIL = "false"
+
+    }
+    
+    stages {
+        stage('📥 Checkout Code') {
+        steps {
+            git branch: 'gates-testing',
+                credentialsId: 'awrs-git-cred',
+                url: 'https://github.com/pranudevsec/new-project-citation.git'
+        }
+    }
+
+stage('🔗 Extract OpenProject Work Package') {
+  steps {
+    script {
+      def commitMsg = sh(
+        script: "git log -1 --pretty=%B",
+        returnStdout: true
+      ).trim()
+
+      echo "📌 Commit message: ${commitMsg}"
+
+      // ✅ CORRECT REGEX
+      def matcher = (commitMsg =~ /WP#([0-9]+)/)
+
+      if (!matcher) {
+        error "❌ Commit message must contain WP#<id> (example: WP#166)"
+      }
+
+      env.WP_ID = matcher[0][1]
+      echo "✅ Linked to OpenProject Work Package: WP#${env.WP_ID}"
+    }
+  }
+}
+
+
+    /* ===================================================== */
+    stage('🚀 Notify OpenProject – Build Started') {
+      steps {
+        script {
+          updateOpenProject("🚀 Jenkins build #${BUILD_NUMBER} STARTED")
+        }
+      }
+    }
+
+    /* ===================================================== */
+    stage('🔐 Fetch DevSecOps Gate Policies') {
+      steps {
+        dir('.security-gates') {
+          git url: 'https://github.com/pranudevsec/devsecops-gates.git',
+              branch: 'main'
+          sh 'find gates -type f -name "*.sh" -exec chmod +x {} +'
+        }
+      }
+    } 
+    
+    
+    
+    
+    
+ stage('Git Debug') {
+      steps {
+        sh '''
+          echo "===== GIT DEBUG INFO ====="
+          git status
+          git branch --show-current
+          git branch -a
+          git remote -v
+          git branch -r --contains HEAD
+          git log -1 --oneline
+        '''
+      }
+ }
+
+ 
+/*
+stage('Gate-0A: Gitleaks – Secret Detection') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          mkdir -p security-reports/gitleaks
+
+          gitleaks detect \
+            --source . \
+            --no-git \
+            --config .gitleaks.toml \
+            --redact \
+            --report-format json \
+            --report-path security-reports/gitleaks/report.json
+        '''
+
+        def msg = buildGateMessage(
+          "Gate-0A",
+          "Gitleaks Secret Scan",
+          "SUCCESS",
+          "No secrets detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-0A",
+          "Gitleaks Secret Scan",
+          "FAILED",
+          "Secrets detected or scan execution failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gitleaks Secret Scan",
+          msg,
+          "",
+          "security-reports/gitleaks/report.json"
+        )
+
+        error("Stopping pipeline due to Gitleaks failure")
+      }
+    }
+  }
+}
+*/
+
+
+/*
+stage('Gate-0A: Gitleaks – Secret Detection') {
+  steps {
+    script {
+      try {
+
+        runGate("gate-0/gitleaks.sh")
+
+        def msg = buildGateMessage(
+          "Gate-0A",
+          "Gitleaks Secret Scan",
+          "SUCCESS",
+          "No secrets detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-0A",
+          "Gitleaks Secret Scan",
+          "FAILED",
+          "Secrets detected or scan execution failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gitleaks Secret Scan",
+          msg,
+          "",
+          "security-reports/gitleaks/*"
+        )
+
+        error("Stopping pipeline due to Gitleaks failure")
+      }
+    }
+  }
+}
+
+
+stage('Gate-0B: TruffleHog – Verified Secrets') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          echo "🔍 TruffleHog: scanning for verified secrets"
+
+          mkdir -p security-reports/trufflehog
+
+          set +e
+          trufflehog filesystem . \
+            --only-verified \
+            --no-update \
+            --exclude-paths .git,node_modules,dist,build,target,coverage,security-reports \
+            --json > security-reports/trufflehog/report.json
+
+          EXIT_CODE=$?
+          set -e
+
+          # Count findings safely
+          FINDINGS=$(jq length security-reports/trufflehog/report.json 2>/dev/null || echo 0)
+
+          if [ "$FINDINGS" -gt 0 ]; then
+            echo "❌ Verified secrets detected by TruffleHog"
+            exit 1
+          fi
+
+          echo "✅ No verified secrets found"
+        '''
+
+        def msg = buildGateMessage(
+          "Gate-0B",
+          "TruffleHog Verified Secret Scan",
+          "SUCCESS",
+          "No verified secrets detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-0B",
+          "TruffleHog Verified Secret Scan",
+          "FAILED",
+          "Verified secrets detected."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "TruffleHog Verified Secret Scan",
+          msg,
+          "",
+          "security-reports/trufflehog/report.json"
+        )
+
+        error("Stopping pipeline due to TruffleHog failure")
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/trufflehog/*', fingerprint: true
+    }
+  }
+}
+
+
+
+
+stage('Gate-0C: Semgrep – Org Secret Policy') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          echo "🔍 Semgrep: enforcing org policy"
+
+          mkdir -p security-reports/semgrep
+
+          docker run --rm \
+            -v "$PWD:/src" \
+            returntocorp/semgrep \
+            semgrep scan \
+              --config /src/semgrep/org-policy.yml \
+              --json \
+              --output /src/security-reports/semgrep/report.json
+
+          FINDINGS=$(jq '.results | length' security-reports/semgrep/report.json 2>/dev/null || echo 0)
+
+          if [ "$FINDINGS" -gt 0 ]; then
+            echo "❌ Policy violations detected by Semgrep"
+            exit 1
+          fi
+
+          echo "✅ No policy violations detected"
+        '''
+
+        def msg = buildGateMessage(
+          "Gate-0C",
+          "Semgrep Org Policy Scan",
+          "SUCCESS",
+          "No policy violations detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-0C",
+          "Semgrep Org Policy Scan",
+          "FAILED",
+          "Policy violations detected."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Semgrep Org Policy Scan",
+          msg,
+          "",
+          "security-reports/semgrep/report.json"
+        )
+
+        error("Stopping pipeline due to Semgrep policy violation")
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/semgrep/*', fingerprint: true
+    }
+  }
+}
+
+*/
+
+stage('Gate-0: Pre-Commit Security Gates') {
+  steps {
+    script {
+      try {
+
+        runGate("gate-0")
+
+        def msg = buildGateMessage(
+          "Gate-0",
+          "Pre-Commit Security Gates",
+          "SUCCESS",
+          "All Gate-0 checks passed."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-0",
+          "Pre-Commit Security Gates",
+          "FAILED",
+          "One or more Gate-0 checks failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gate-0 Security Checks",
+          msg,
+          "",
+          "security-reports/**/*"
+        )
+
+        error("Stopping pipeline due to Gate-0 failure")
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'security-reports/**/*', fingerprint: true
+    }
+  }
+}
+
+
+    
+        //npx prisma generate
+        //npm run lint || echo "⚠️ Lint not configured, skipping"
+  stage('Compile Applications & Install the dependencies') {
+    parallel {
+        stage('Compile Backend') {
+            steps {
+                dir('backend') {
+                    sh '''
+                      npm install
+                    '''
+                }
+            }
+        }
+
+        stage('Compile Frontend & Install the dependencies') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                      npm install
+                      npm run build
+                    '''
+                }
+            }
+        }
+    }
+}
+
+/*
+stage('📦 Install Dependencies') {
+            steps {
+                sh '''
+                    echo "📦 Installing dependencies..."
+                    cd backend && npm install --no-audit && cd ..
+                    cd frontend && npm install --no-audit && cd ..
+                '''
+            }
+        }
+
+*/
+
+
+
+/*
+stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \\
+                           -Dsonar.projectName=citation-gates  \\
+                           -Dsonar.sources=. \\
+                           -Dsonar.projectKey=citation-gates '''
+                }
+            }
+        }
+
+
+
+stage('Sonar Quality Gate') {
+  steps {
+    script {
+      timeout(time: 10, unit: 'MINUTES') {
+
+        def qualityGate = waitForQualityGate()
+
+      //  if (qualityGate.status != 'OK') {
+      //if (true) {   // FORCE FAIL FOR TEST
+       if (false) {   // FORCE FAIL FOR TEST
+          def msg = buildGateMessage(
+            "Gate-1",
+            "Sonar Quality Gate",
+            "FAILED",
+            "Sonar Quality Gate Status: ${qualityGate.status}"
+          )
+
+          updateOpenProject(msg)
+
+          createGateTicket(
+            "Sonar Quality Gate",
+            msg,
+            "",
+            ""
+          )
+
+          error("Stopping pipeline due to Sonar Quality Gate failure")
+        }
+
+        else {
+
+          def msg = buildGateMessage(
+            "Gate-1",
+            "Sonar Quality Gate",
+            "SUCCESS",
+            "All quality thresholds passed."
+          )
+
+          updateOpenProject(msg)
+        }
+      }
+    }
+  }
+}
+
+*/
+
+
+stage('Gate-1: SonarQube Centralized Enforcement') {
+  steps {
+    script {
+      try {
+
+        withSonarQubeEnv('sonar_server') {
+
+          // Run Sonar Scanner
+          sh """
+            ${SCANNER_HOME}/bin/sonar-scanner \
+              -Dsonar.projectName=citation-gates \
+              -Dsonar.sources=. \
+              -Dsonar.projectKey=citation-gates
+          """
+
+          // Wait for Sonar to process report
+          sleep 20
+
+          // Only pass project key (Host URL already available here)
+          withEnv([
+            "SONAR_PROJECT_KEY=citation-gates"
+          ]) {
+            runGate("gate-1")
+          }
+        }
+
+        def msg = buildGateMessage(
+          "Gate-1",
+          "Sonar Centralized Enforcement",
+          "SUCCESS",
+          "Quality Gate + Metrics thresholds passed."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-1",
+          "Sonar Centralized Enforcement",
+          "FAILED",
+          "Sonar Quality Gate or Metrics threshold failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Sonar Centralized Enforcement",
+          msg,
+          "",
+          ""
+        )
+
+        error("Stopping pipeline due to Sonar Gate-1 failure")
+      }
+    }
+  }
+}
+
+
+
+
+
+//--scan backend
+//--scan frontend
+
+
+
+//  "**/dependency-check-report.html"  add these after msg "", next step 
+/*
+stage('🛡️ Gate-2: OWASP Dependency Check') {
+  steps {
+    script {
+      try {
+
+        dependencyCheck(
+          odcInstallation: 'DP_Check',
+          additionalArguments: """
+            --project citation-application
+            --scan . 
+            --format HTML
+            --failOnCVSS 7
+            --enableExperimental
+            --enableRetired
+            --disableAssembly
+            --disableOssIndex
+          """
+        )
+
+        dependencyCheckPublisher(
+          pattern: 'dependency-check-report.html'
+        )
+
+        def msg = buildGateMessage(
+          "Gate-2",
+          "OWASP Dependency Check",
+          "SUCCESS",
+          "No HIGH/CRITICAL vulnerabilities detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-2",
+          "OWASP Dependency Check",
+          "FAILED",
+          "High/Critical vulnerabilities detected."
+        )
+*/
+/*
+        updateOpenProject(msg)
+        createGateTicket(
+          "OWASP Dependency Check",
+          msg,
+          "",
+      //  )
+//        error("Stopping pipeline due to Dependency Check failure")
+  //    }
+   // }
+ // }
+//}
+//*/
+
+stage('🛡️ Gate-2: OWASP Dependency Check') {
+  steps {
+    script {
+      try {
+
+        /* ---------------------------------------------
+           0️⃣ Clean Previous Reports
+        --------------------------------------------- */
+        sh '''
+          echo "🧹 Cleaning old Dependency-Check reports..."
+          rm -f dependency-check-report.*
+          rm -f gate-2-summary.html
+        '''
+
+        /* ---------------------------------------------
+           1️⃣ Run OWASP Dependency Check
+        --------------------------------------------- */
+        dependencyCheck(
+          odcInstallation: 'DP_Check',
+          additionalArguments: """
+            --project citation-application
+            --scan .
+            --exclude "**/node_modules/**"
+            --exclude "**/dist/**"
+            --exclude "**/build/**"
+            --format XML
+            --format HTML
+            --format JSON
+            --out .
+            --enableExperimental
+            --disableAssembly
+            --disableOssIndex
+          """
+          // ❌ Removed failBuildOnCVSS
+        )
+
+        /* ---------------------------------------------
+           2️⃣ Publish XML (Trend Graph)
+        --------------------------------------------- */
+        dependencyCheckPublisher(
+          pattern: 'dependency-check-report.xml'
+        )
+
+        /* ---------------------------------------------
+           3️⃣ Execute Custom Gate-2 Policies
+        --------------------------------------------- */
+        runGate("gate-2")
+
+        /* ---------------------------------------------
+           4️⃣ Publish Official HTML Report
+        --------------------------------------------- */
+        publishHTML(target: [
+          reportDir: '.',
+          reportFiles: 'dependency-check-report.html',
+          reportName: 'OWASP Dependency Check Report',
+          keepAll: true,
+          alwaysLinkToLastBuild: true,
+          allowMissing: false
+        ])
+
+        /* ---------------------------------------------
+           5️⃣ Publish Custom Gate-2 HTML Summary
+        --------------------------------------------- */
+        publishHTML(target: [
+          reportDir: '.',
+          reportFiles: 'gate-2-summary.html',
+          reportName: 'Gate-2 Policy Summary',
+          keepAll: true,
+          alwaysLinkToLastBuild: true,
+          allowMissing: true
+        ])
+
+        def msg = buildGateMessage(
+          "Gate-2",
+          "OWASP Dependency Check",
+          "SUCCESS",
+          "CVSS policy and license policy compliant."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-2",
+          "OWASP Dependency Check",
+          "FAILED",
+          "CVSS or license policy violation detected."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "OWASP Dependency Check",
+          msg,
+          "",
+          "dependency-check-report.html"
+        )
+
+        error("Stopping pipeline due to Gate-2 policy violation")
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'dependency-check-report.*, gate-2-summary.html', fingerprint: true
+    }
+  }
+}
+
+
+stage('Build Docker Images') {
+  steps {
+    script {
+      def backendImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+
+
+        sh """
+echo "🧹 Cleaning old citation-backend images..."
+docker images "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend" \
+  --format "{{.Repository}}:{{.Tag}}" \
+  | grep -v "${BUILD_NUMBER}" \
+  | xargs -r docker rmi -f
+
+
+echo "🛠️ Building API image"
+docker build --no-cache -t ${backendImage} ./backend
+"""
+
+        sh """
+echo "🧹 Cleaning old citation-frontend images..."
+docker images "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend" \
+  --format "{{.Repository}}:{{.Tag}}" \
+  | grep -v "${BUILD_NUMBER}" \
+  | xargs -r docker rmi -f
+
+
+echo "🛠️ Building WebApp image"
+docker build --no-cache -t ${frontendImage} ./frontend
+"""
+
+      }
+    }
+  }
+}
+
+stage('SBOM Generation (Syft)') {
+  steps {
+    script {
+      def backendImage  = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${env.BUILD_NUMBER}"
+
+      sh '''
+        set -eu
+
+        echo "🧹 Cleaning old SBOM reports..."
+        rm -rf sbom
+        mkdir -p sbom
+
+        echo "🧾 Generating SBOM for Backend image..."
+        syft ''' + backendImage + ''' -o spdx-json > sbom/citation-backend-''' + env.BUILD_NUMBER + '''-sbom.json
+
+        echo "🧾 Generating SBOM for Frontend image..."
+        syft ''' + frontendImage + ''' -o spdx-json > sbom/citation-frontend-''' + env.BUILD_NUMBER + '''-sbom.json
+        
+        
+        echo "🧾 Generating Human-readable SBOM (table)..."
+        syft ''' + backendImage + ''' -o table > sbom/citation-backend-''' + env.BUILD_NUMBER + '''-sbom.txt
+        syft ''' + frontendImage + ''' -o table > sbom/citation-frontend-''' + env.BUILD_NUMBER + '''-sbom.txt
+      '''
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'sbom/*.json', fingerprint: true
+      archiveArtifacts artifacts: 'sbom/*.txt', fingerprint: true
+    }
+  }
+}
+
+
+
+/*
+//should add --exit-code 1 after --severity tag
+stage('Gate-3: Trivy Docker Image Scan') {
+  steps {
+    script {
+         // ✅ DEFINE IMAGES HERE
+      def backendImage  = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${env.BUILD_NUMBER}"
+
+      try {
+
+        sh """
+  trivy image \
+    --severity HIGH,CRITICAL \
+    --format table \
+    --output trivy-backend.table \
+    ${backendImage}
+
+  trivy image \
+    --severity HIGH,CRITICAL \
+    --exit-code 1 \
+    --format table \
+    --output trivy-frontend.table \
+    ${frontendImage}
+"""
+
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Trivy Docker Scan",
+          "SUCCESS",
+          "No HIGH/CRITICAL vulnerabilities found."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Trivy Docker Scan",
+          "FAILED",
+          "High/Critical vulnerabilities detected in Docker images."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Trivy Docker Scan",
+          msg,
+          "",
+          "trivy-*.table"
+        )
+
+        error("Stopping pipeline due to Trivy failure")
+      }
+    }
+  }
+}
+
+*/
+
+
+stage('Gate-3: Container Trust & Policy') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          set -e
+
+          chmod +x .security-gates/gates/gate-3/*.sh
+
+          echo "🔍 Checking Base Image Whitelist"
+          .security-gates/gates/gate-3/base_image_whitelist.sh
+
+          echo "🔍 Running Trivy Policy"
+
+          BACKEND_IMAGE="$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/citation-backend:$BUILD_NUMBER"
+          FRONTEND_IMAGE="$LMS_REGISTRY_URL/repository/$LMS_DOCKER_REPO/citation-frontend:$BUILD_NUMBER"
+
+          .security-gates/gates/gate-3/trivy_image_policy.sh "$BACKEND_IMAGE"
+          .security-gates/gates/gate-3/trivy_image_policy.sh "$FRONTEND_IMAGE"
+        '''
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Container Trust & Policy",
+          "SUCCESS",
+          "Base image and vulnerability policy passed."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Container Trust & Policy",
+          "FAILED",
+          "Gate-3 container trust validation failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gate-3 Container Failure",
+          msg,
+          "",
+          ""
+        )
+
+        error("Stopping pipeline due to Gate-3 failure")
+      }
+    }
+  }
+}
+
+
+stage('Push Docker Images') {
+  steps {
+    script {
+      def backendImage    = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${env.BUILD_NUMBER}"
+      def frontendImage = "${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${env.BUILD_NUMBER}"
+
+      withCredentials([usernamePassword(
+        credentialsId: 'nexus_cred',
+        usernameVariable: 'NEXUS_USERNAME',
+        passwordVariable: 'NEXUS_PASSWORD'
+      )]) {
+
+        sh '''
+          echo "⚙️ Logging in to Nexus Docker Registry..."
+          echo "$NEXUS_PASSWORD" | docker login $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" --password-stdin
+        '''
+
+        sh """
+echo "📤 Pushing Backend(API) image"
+docker push ${backendImage}
+"""
+
+        sh """
+echo "📤 Pushing Frontend(WebApp) image"
+docker push ${frontendImage}
+"""
+
+      }
+    }
+  }
+}
+
+
+
+stage('Image Signing - Cosign') {
+  steps {
+    withCredentials([
+      file(credentialsId: 'cosign-private-key', variable: 'COSIGN_KEY'),
+      string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
+    ]) {
+
+      sh '''
+        set -e
+
+        echo "🔍 Preparing image names safely"
+        BACKEND_IMAGE="${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${BUILD_NUMBER}"
+        FRONTEND_IMAGE="${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${BUILD_NUMBER}"
+
+        echo "🔍 Getting image digests..."
+        BACKEND_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$BACKEND_IMAGE")
+        FRONTEND_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FRONTEND_IMAGE")
+
+        echo "$BACKEND_DIGEST" > backend.digest
+        echo "$FRONTEND_DIGEST" > frontend.digest
+
+        echo "🔐 Signing Backend by Digest..."
+        COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign sign --key "$COSIGN_KEY" "$BACKEND_DIGEST"
+
+        echo "🔐 Signing Frontend by Digest..."
+        COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign sign --key "$COSIGN_KEY" "$FRONTEND_DIGEST"
+      '''
+    }
+  }
+}
+
+stage('Image Attestation - Cosign') {
+  steps {
+    withCredentials([
+      file(credentialsId: 'cosign-private-key', variable: 'COSIGN_KEY'),
+      string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
+    ]) {
+
+      sh '''
+        set -e
+
+        BACKEND_DIGEST=$(cat backend.digest)
+        FRONTEND_DIGEST=$(cat frontend.digest)
+
+        echo "📝 Generating dynamic provenance file..."
+
+        cat <<EOF > provenance.json
+{
+  "builder": "jenkins",
+  "pipeline": "${JOB_NAME}",
+  "project": "citation",
+  "build_number": "${BUILD_NUMBER}",
+  "security_gates": {
+    "sast": "passed",
+    "sca": "passed",
+    "image_scan": "passed"
+  }
+}
+EOF
+
+        echo "🔏 Attesting Backend Image..."
+        COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign attest \
+          --key "$COSIGN_KEY" \
+          --predicate provenance.json \
+          --type custom \
+          "$BACKEND_DIGEST"
+
+        echo "🔏 Attesting Frontend Image..."
+        COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign attest \
+          --key "$COSIGN_KEY" \
+          --predicate provenance.json \
+          --type custom \
+          "$FRONTEND_DIGEST"
+      '''
+    }
+  }
+}
+
+/*
+stage('Image Verification Gate') {
+  steps {
+    withCredentials([
+      file(credentialsId: 'cosign-public-key', variable: 'COSIGN_PUB')
+    ]) {
+
+      sh '''
+        set -e
+
+        BACKEND_DIGEST=$(cat backend.digest)
+        FRONTEND_DIGEST=$(cat frontend.digest)
+
+        echo "🔍 Verifying Backend..."
+        cosign verify --key "$COSIGN_PUB" "$BACKEND_DIGEST"
+
+        echo "🔍 Verifying Frontend..."
+        cosign verify --key "$COSIGN_PUB" "$FRONTEND_DIGEST"
+      '''
+    }
+  }
+}
+*/
+
+stage('Gate-3: Signature & Provenance Verification') {
+  steps {
+    script {
+
+      try {
+
+        withCredentials([
+          file(credentialsId: 'cosign-public-key', variable: 'COSIGN_PUB')
+        ]) {
+
+          sh '''
+            set -e
+
+            BACKEND_DIGEST=$(cat backend.digest)
+        FRONTEND_DIGEST=$(cat frontend.digest)
+
+        echo "🔍 Verifying Signature..."
+        cosign verify --key "$COSIGN_PUB" "$BACKEND_DIGEST"
+        cosign verify --key "$COSIGN_PUB" "$FRONTEND_DIGEST"
+
+        echo "🔎 Verifying Attestation..."
+        cosign verify-attestation \
+          --key "$COSIGN_PUB" \
+          --type custom \
+          "$BACKEND_DIGEST"
+
+        cosign verify-attestation \
+          --key "$COSIGN_PUB" \
+          --type custom \
+          "$FRONTEND_DIGEST"
+        '''
+        }
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Signature & Provenance Verification",
+          "SUCCESS",
+          "Image signature and SLSA provenance verified successfully."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-3",
+          "Signature & Provenance Verification",
+          "FAILED",
+          "Image signature or provenance verification failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gate-3 Signature/Provenance Failure",
+          msg,
+          "",
+          "backend.digest, frontend.digest"
+        )
+
+        error("Stopping pipeline due to Signature/Provenance verification failure")
+      }
+    }
+  }
+}
+
+
+
+/*
+stage('🚀 Deploy Citation via Docker Run (Secure)') {
+  steps {
+    script {
+      withCredentials([
+        usernamePassword(
+          credentialsId: 'nexus_cred',
+          usernameVariable: 'NEXUS_USERNAME',
+          passwordVariable: 'NEXUS_PASSWORD'
+        )
+      ]) {
+
+        sh '''
+          set -e
+
+          echo "🔐 Logging in to Nexus Docker Registry"
+          echo "$NEXUS_PASSWORD" | docker login \
+            $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" \
+            --password-stdin
+
+          echo "🔧 Ensuring Docker network exists"
+          docker network inspect citation-net >/dev/null 2>&1 || docker network create citation-net
+
+          echo "🧹 Removing old containers (safe re-deploy)"
+          docker rm -f citation-postgres citation-backend citation-frontend >/dev/null 2>&1 || true
+
+          echo "🐘 Starting PostgreSQL"
+          docker run -d \
+            --name citation-postgres \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/postgres.env \
+            -v citation-db-data:/var/lib/postgresql/data \
+            postgres:15
+
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in {1..20}; do
+            if docker exec citation-postgres pg_isready -U postgres >/dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🚀 Starting Citation Backend API"
+          docker pull ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${BUILD_NUMBER}
+
+          docker run -d \
+            --name citation-backend \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/backend.env \
+            -p 8386:8386 \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-backend:${BUILD_NUMBER}
+
+          echo "⏳ Waiting for Backend API to be healthy..."
+          for i in {1..20}; do
+            if curl -fs http://127.0.0.1:8386/health >/dev/null; then
+              echo "✅ Backend API is healthy"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🌐 Starting Citation Frontend"
+          docker pull ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${BUILD_NUMBER}
+
+          docker run -d \
+            --name citation-frontend \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/frontend.env \
+            -p 8001:80 \
+            ${LMS_REGISTRY_URL}/repository/${LMS_DOCKER_REPO}/citation-frontend:${BUILD_NUMBER}
+
+          echo "🎉 Citation Deployment Completed Successfully"
+
+          echo "🔓 Logging out from Nexus"
+          docker logout $LMS_REGISTRY_URL
+        '''
+      }
+    }
+  }
+}
+*/
+
+
+stage('🚀 Deploy Citation via Docker Run (Secure - Digest Based)') {
+  steps {
+    script {
+      withCredentials([
+        usernamePassword(
+          credentialsId: 'nexus_cred',
+          usernameVariable: 'NEXUS_USERNAME',
+          passwordVariable: 'NEXUS_PASSWORD'
+        )
+      ]) {
+
+        sh '''
+          set -e
+
+          echo "🔐 Logging in to Nexus Docker Registry"
+          echo "$NEXUS_PASSWORD" | docker login \
+            $LMS_REGISTRY_URL \
+            -u "$NEXUS_USERNAME" \
+            --password-stdin
+
+          echo "📦 Reading Signed Image Digests"
+          BACKEND_DIGEST=$(cat backend.digest)
+          FRONTEND_DIGEST=$(cat frontend.digest)
+
+          echo "🔧 Ensuring Docker network exists"
+          docker network inspect citation-net >/dev/null 2>&1 || docker network create citation-net
+
+          echo "🧹 Removing old containers (safe re-deploy)"
+          docker rm -f citation-postgres citation-backend citation-frontend >/dev/null 2>&1 || true
+
+          echo "🐘 Starting PostgreSQL"
+          docker run -d \
+            --name citation-postgres \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/postgres.env \
+            -v citation-db-data:/var/lib/postgresql/data \
+            postgres:15
+
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in {1..20}; do
+            if docker exec citation-postgres pg_isready -U postgres >/dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🚀 Pulling & Starting Backend (Digest)"
+          docker pull $BACKEND_DIGEST
+
+          docker run -d \
+            --name citation-backend \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/backend.env \
+            -p 8386:8386 \
+            $BACKEND_DIGEST
+
+          echo "⏳ Waiting for Backend API to be healthy..."
+          for i in {1..20}; do
+            if curl -fs http://127.0.0.1:8386/health >/dev/null; then
+              echo "✅ Backend API is healthy"
+              break
+            fi
+            sleep 3
+          done
+
+          echo "🌐 Pulling & Starting Frontend (Digest)"
+          docker pull $FRONTEND_DIGEST
+
+          docker run -d \
+            --name citation-frontend \
+            --network citation-net \
+            --restart unless-stopped \
+            --env-file /var/lib/jenkins/envs/frontend.env \
+            -p 8001:80 \
+            $FRONTEND_DIGEST
+
+          echo "🎉 Citation Deployment Completed Successfully"
+
+          echo "🔓 Logging out from Nexus"
+          docker logout $LMS_REGISTRY_URL
+        '''
+      }
+    }
+  }
+}
+
+
+
+stage('Gate-4.1: Performance Test - JMeter') {
+  steps {
+    script {
+      sh '''
+set -eu
+
+echo "🧹 Cleaning performance-report safely..."
+
+# Force delete using container (avoids permission issues)
+docker run --rm \
+  -v "$WORKSPACE:/workspace" \
+  alpine \
+  sh -c "rm -rf /workspace/performance-report"
+
+mkdir -p performance-report
+mkdir -p performance-report/temp
+
+echo "🚀 Running JMeter..."
+
+docker run --rm \
+  --network host \
+  -v "$WORKSPACE/performance:/tests" \
+  -v "$WORKSPACE/performance-report:/report" \
+  -v "$WORKSPACE/performance-report/temp:/opt/apache-jmeter-5.5/temp" \
+  justb4/jmeter:5.5 \
+  -n -t /tests/performance-test.jmx \
+  -l /report/results.csv \
+  -e -o /report/html \
+  -JUSERS=50 \
+  -JRAMP=20 \
+  -JDURATION=60 \
+  -Jjmeter.reportgenerator.apdex_satisfied_threshold=500 \
+  -Jjmeter.reportgenerator.apdex_tolerated_threshold=1500
+
+
+echo "🔎 Verifying output..."
+
+[ -f performance-report/results.csv ] || { echo "❌ Results file missing"; exit 1; }
+[ -f performance-report/html/index.html ] || { echo "❌ Dashboard not generated"; exit 1; }
+
+echo "✅ Performance test completed successfully"
+'''
+
+    }
+  }
+
+  post {
+    always {
+      publishHTML(target: [
+        reportDir: 'performance-report/html',
+        reportFiles: 'index.html',
+        reportName: 'Performance Test Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: false
+      ])
+    }
+  }
+}
+
+
+
+/*
+stage('Gate-4.2: Performance Quality Gate') {
+  steps {
+    script {
+
+      // Count failed requests correctly (column 8 = success)
+      def failedRequests = sh(
+        script: '''
+          awk -F',' '$8 == "false" {count++} END {print count+0}' performance-report/results.jtl
+        ''',
+        returnStdout: true
+      ).trim().toInteger()
+
+      echo "❗ Failed Requests: ${failedRequests}"
+
+      if (failedRequests > 5) {
+        error("❌ Performance Gate Failed: Too many failed requests")
+      }
+
+      // Calculate average response time (column 2 = elapsed time)
+      def avgResponse = sh(
+        script: '''
+          awk -F',' '{sum+=$2} END {if (NR>0) print sum/NR; else print 0}' performance-report/results.jtl
+        ''',
+        returnStdout: true
+      ).trim().toDouble()
+
+      echo "📊 Avg Response Time (ms): ${avgResponse}"
+
+      if (avgResponse > 2000) {
+        error("❌ Performance Gate Failed: Avg response time exceeded 2000 ms")
+      }
+
+      echo "✅ Performance SLA Passed"
+    }
+  }
+}
+*/
+
+
+/*
+stage('Gate-4.1: Performance Test - JMeter') {
+  steps {
+    script {
+sh '''
+set -eu
+
+echo "🧹 Cleaning old reports..."
+rm -rf performance-report
+mkdir -p performance-report
+
+echo "🚀 Running JMeter Example Test..."
+
+cd /opt/jmeter/bin/examples
+
+/opt/jmeter/bin/jmeter -n \
+  -t CSVSample.jmx \
+  -l $WORKSPACE/performance-report/results.csv
+
+echo "📊 Generating HTML report..."
+
+/opt/jmeter/bin/jmeter -g $WORKSPACE/performance-report/results.csv \
+  -o $WORKSPACE/performance-report/html
+
+echo "🔎 Verifying output..."
+ls -l $WORKSPACE/performance-report/html
+
+'''
+    }
+  }
+
+  post {
+    always {
+      publishHTML(target: [
+        reportDir: 'performance-report/html',
+        reportFiles: 'index.html',
+        reportName: 'Performance Test Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: false
+      ])
+    }
+  }
+}
+*/
+
+/*
+stage('Gate-4.1: Performance Test - JMeter') {
+  steps {
+    script {
+sh '''
+set -eu
+
+rm -rf performance-report
+mkdir -p performance-report
+
+echo "🚀 Running Simple HTTP Test..."
+
+# Run test
+/opt/jmeter/bin/jmeter -n \
+  -t /opt/jmeter/bin/jmeter/CSVSample.jmx \
+  -l performance-report/results.jtl 
+
+echo "📊 Generating HTML dashboard..."
+
+# Generate report
+/opt/jmeter/bin/jmeter -g performance-report/results.jtl \
+  -o performance-report/html
+
+ls -l performance-report/html
+'''
+    }
+  }
+
+  post {
+    always {
+      publishHTML(target: [
+        reportDir: 'performance-report/html',
+        reportFiles: 'index.html',
+        reportName: 'Performance Test Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: false
+      ])
+    }
+  }
+}
+*/
+
+stage('Gate-4.2: Performance Quality Gate') {
+  steps {
+    script {
+      try {
+
+        runGate("gate-4")
+
+        def msg = buildGateMessage(
+          "Gate-4",
+          "Performance Quality Gate",
+          "SUCCESS",
+          "Performance SLA and error rate policies passed."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-4",
+          "Performance Quality Gate",
+          "FAILED",
+          "Performance SLA or error rate policy failed."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gate-4 Performance Failure",
+          msg,
+          "",
+          "performance-report/**/*"
+        )
+
+        error("Stopping pipeline due to Gate-4 failure")
+      }
+    }
+  }
+}
+
+/*
+stage('Gate-5: DAST - OWASP ZAP') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          set -eu
+
+          echo "🧹 Cleaning old ZAP reports..."
+          rm -rf zap-report
+          mkdir -p zap-report
+          chmod 777 zap-report
+
+          echo "🔍 Running OWASP ZAP Automation Framework..."
+
+          docker run --rm \
+            --network host \
+            -v "$WORKSPACE/zap-report:/zap/wrk" \
+            -v "$WORKSPACE/zap/zap-automation.yaml:/zap/zap-automation.yaml" \
+            zaproxy/zap-weekly \
+            zap.sh -cmd -port 8091 -autorun /zap/zap-automation.yaml
+        '''
+
+        def msg = buildGateMessage(
+          "Gate-5",
+          "OWASP ZAP DAST",
+          "SUCCESS",
+          "DAST scan passed. No HIGH/CRITICAL issues."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-4",
+          "OWASP ZAP DAST",
+          "FAILED",
+          "High/Critical DAST vulnerabilities detected."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "OWASP ZAP DAST",
+          msg,
+          "",
+          "zap-report/*"
+        )
+
+        error("Stopping pipeline due to ZAP failure")
+      }
+    }
+  }
+
+  post {
+    always {
+      publishHTML(target: [
+        reportDir: 'zap-report',
+        reportFiles: 'zap-report.html',
+        reportName: 'OWASP ZAP DAST Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: true
+      ])
+    }
+  }
+}
+*/
+
+/* ===================================================== */
+/*  STAGE 1 — ZAP EXECUTION (ONLY SCAN)                 */
+/* ===================================================== */
+
+stage('🛡️ ZAP Execution') {
+  steps {
+    script {
+      try {
+
+        sh '''
+          set -eu
+
+          echo "🧹 Cleaning old ZAP reports..."
+          rm -rf zap-report
+          mkdir -p zap-report
+          chmod 777 zap-report
+
+          echo "🔍 Running OWASP ZAP Automation Framework..."
+
+          docker run --rm \
+            --network host \
+            -v "$WORKSPACE/zap-report:/zap/wrk" \
+            -v "$WORKSPACE/zap/zap-automation.yaml:/zap/zap-automation.yaml" \
+            zaproxy/zap-weekly \
+            zap.sh -cmd -port 8091 -autorun /zap/zap-automation.yaml
+        '''
+
+        echo "✅ ZAP Scan Completed Successfully"
+
+      } catch (err) {
+        error("❌ ZAP execution failed before policy enforcement")
+      }
+    }
+  }
+
+  post {
+    always {
+      publishHTML(target: [
+        reportDir: 'zap-report',
+        reportFiles: 'zap-report.html',
+        reportName: 'OWASP ZAP DAST Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: true
+      ])
+    }
+  }
+}
+
+
+/* ===================================================== */
+/*  STAGE 2 — CENTRALIZED DAST POLICY ENFORCEMENT       */
+/* ===================================================== */
+
+stage('Gate-5: DAST Centralized Enforcement') {
+  steps {
+    script {
+      try {
+
+        runGate("gate-5")
+
+        def msg = buildGateMessage(
+          "Gate-5",
+          "OWASP ZAP DAST",
+          "SUCCESS",
+          "DAST policies passed. No policy violations detected."
+        )
+
+        updateOpenProject(msg)
+
+      } catch (err) {
+
+        def msg = buildGateMessage(
+          "Gate-5",
+          "OWASP ZAP DAST",
+          "FAILED",
+          "DAST policy violation detected by centralized gate."
+        )
+
+        updateOpenProject(msg)
+
+        createGateTicket(
+          "Gate-5 DAST Failure",
+          msg,
+          "",
+          "zap-report/**/*"
+        )
+
+        error("Stopping pipeline due to Gate-5 failure")
+      }
+    }
+  }
+}
+
+
+}
+}
+
+/*
+post {
+  failure {
+    script {
+      if (env.ENABLE_EMAIL == "true") {
+        mail to: 'security-team@company.com',
+             subject: "🚨 ${env.JOB_NAME} Failed - Build #${env.BUILD_NUMBER}",
+             body: "Security gate failed. OpenProject ticket created."
+      }
+    }
+  }
+}
+
+*/
+
+
+
+
+
+
+
+
+==================================================================
 /*
 def runGate(String gateName) {
   sh """
