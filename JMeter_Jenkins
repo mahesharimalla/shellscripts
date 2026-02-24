@@ -1,0 +1,104 @@
+Step 1: Set Up Jenkins
+Install Jenkins: https://www.jenkins.io/download/
+Add necessary plugins:
+Performance Plugin
+Jenkins Pipeline
+JUnit Plugin (for test results) 
+Step 2: Create a JMeter Test Plan
+Use JMeter to design your test scenario: HTTP requests, thread group, listeners.
+Save the test as performance_test.jmx.
+Step 3: Store Test Files in Git
+Place your .jmx file in your code repository under a tests/performance/ folder.
+
+Version-controlling your test scripts ensures:
+
+Traceability
+Easy updates
+Cross-team visibility 
+Step 4: Write a Jenkinsfile
+groovy
+
+CopyEdit
+
+pipeline {
+
+agent any 
+
+stages {
+
+        stage(‘Checkout’) {
+
+         steps {
+
+             git ‘https://github.com/your-org/your-repo.git’
+
+         }
+
+     }
+
+     stage(‘Run JMeter Test’) {
+
+         steps {
+
+             sh ”’
+
+                    mkdir results
+
+                 jmeter -n -t tests/performance/performance_test.jmx -l results/test-results.jtl -e -o results/report
+
+             ”’
+
+         }
+
+     }
+
+     stage(‘Publish Report’) {
+
+         steps {
+
+                publishHTML(target: [
+
+                    allowMissing: false,
+
+                    alwaysLinkToLastBuild: true,
+
+                    keepAll: true,
+
+                    reportDir: ‘results/report’,
+
+                    reportFiles: ‘index.html’,
+
+                    reportName: ‘Performance Report’
+
+             ])
+
+         }
+
+     }
+
+}
+
+} 
+
+Step 5: View and Analyze Reports
+After every build:
+
+Jenkins will generate an HTML report with metrics like response times, error %, throughput.
+Use the Performance Plugin to track trends across builds. 
+Step 6: Set Load Thresholds for Alerts
+Use Jenkins plugins or add logic in your scripts to:
+
+Alert on spike in latency
+Fail pipeline if requests/sec drop
+Block merge if SLA metrics are not met
+Example using JMeter + JUnit-style assertions:
+
+xml
+
+CopyEdit
+
+<assertion>
+
+  <responseTime> <max>500</max> </responseTime>
+
+</assertion>
