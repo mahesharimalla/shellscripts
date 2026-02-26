@@ -1,0 +1,152 @@
+https://www.youtube.com/watch?v=0Ec_VeO60m8
+
+Install JDK & Maven for java project
+cd Broadgame
+mvn package
+cd target/
+java -jar <nameofthejarfile.jar>
+We can access the application with the port number 8080
+
+SetUP prometheus in VM & run it as a service(should be running in background)
+SetUp node_exporter in VM
+Setup Alert_Manager in VM
+Setup blackbox_exporter in VM
+
+
+
+SetUP prometheus in VM & run it as a service(should be running in background):
+==============================================================================
+cd prometheus
+./prometheus & (Command to run it as a service)
+Running on the port number 9090(default port number)
+vi alert_rules.yml
+add the yml file inside .yml in prometheus
+
+In prometheus.yml file we need all the rule files under rule_files:
+rule_files:
+  - "alert_rules.yml"
+
+
+
+SetUp node_exporter in VM:
+==========================
+Install the Node Exporter & Run it as a service (That means it should be running in background)
+cd node_exporter
+./node_exporter & (Command to run it as a service)
+Running on port 9100 (Default) & we can check the metrics with http:IP_Address:9100/metrics
+
+Setup Alert_Manager in VM:
+Install the alert_manager in VM 
+In alertmanager we can add the email for getting the email notification & details(time configurations)
+cd alermanager/
+./alertmanager &    (Running on default number 9093 & IP_Address:9093/#/alerts Where we can see the alert groups setup we can see)
+vi alertmanager.yaml   (default file)
+
+
+
+After adding the alert_rules.yml in the prometheus.yml we need to restart it:
+pgrep prometheus --> It will  give a PID --> Kill PID --> Prometheus will stopped
+Immediatly we can start it again with   ./prometheus &
+So it will restart it again & we check the alert rules in prometheus IP_Address:9090/rules. 
+Here we can see the alert rules are visible now.
+
+So now we can add the - alertmanager:9093 in the prometheus.yml under alertmanager configuration  
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: 
+           - 192.168.10.106:9093
+
+
+Add also add the jobs of node_exporter & blackbox exporter in prometheus.yml 
+
+kill the restart the prometheus again
+
+Start the blackbox_exporter  as a service
+./blackbox_exporter &   (By default it will run in the 9115 port number) 
+
+Check the service are up or not in the prometheus with port number 9090.
+
+
+Create an APP PASSWORD in Google Account & Save it for Email Notification
+
+Now Setting up the alert manager to send a email notification:
+cd alertmanager
+remove default file & add the custom file or edit an default file
+alertmanager.yml
+vi alertmanager.yml
+---
+route:
+
+group_by:
+
+alertname
+
+group_wait: 305
+
+group_interval:
+
+repeat_interval: 1h
+
+5m
+
+receiver: email-notifications
+
+receivers:
+
+name: email-notifications
+
+email_configs:
+
+to: jaiswaladi246@gmail.com
+
+from: test@gmail.com
+
+smarthost: smtp.gmail.com:587
+
+auth_username: jaiswaladi246@gmail.com
+
+auth_identity: jaiswaladi246@gmail.com
+
+auth_password: tpeo ntic asse ffgb
+
+send resolved:
+
+true
+
+inhibit_rules:
+
+source_match:
+
+severity: critical
+
+target_match:
+
+severity: warning
+
+equal:
+
+alertname
+
+dev
+
+instance
+
+I
+
+:wa
+
+
+pgrep alertmanager 
+kill PID
+
+./alertmanager & 
+
+
+Now Test the Website or Application Status by doing shutdown.
+After 1 mint it will be website will be in inactive state then automatically it will send a email notification
+
+
+yaml Lint:
+To check the indentation
+
