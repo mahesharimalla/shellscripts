@@ -1,0 +1,486 @@
+Started by user admin
+[Pipeline] Start of Pipeline (hide)
+[Pipeline] node
+Running on Jenkins in /var/lib/jenkins/workspace/citation-gates-latest
+[Pipeline] {
+[Pipeline] withCredentials
+Masking supported pattern matches of $LMS_DOCKER_REPO or $LMS_REGISTRY_URL or $LMS_PROJECT_NAME or $SONAR_TOKEN
+[Pipeline] {
+[Pipeline] tool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Tool Install)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (📥 Checkout Code)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] script
+[Pipeline] {
+[Pipeline] echo
+🧹 Cleaning workspace before checkout...
+[Pipeline] deleteDir
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] git
+The recommended git tool is: NONE
+using credential awrs-git-cred
+Cloning the remote Git repository
+Cloning repository https://github.com/pranudevsec/new-project-citation.git
+ > /usr/bin/git init /var/lib/jenkins/workspace/citation-gates-latest # timeout=10
+Fetching upstream changes from https://github.com/pranudevsec/new-project-citation.git
+ > /usr/bin/git --version # timeout=10
+ > git --version # 'git version 2.43.0'
+using GIT_ASKPASS to set credentials awrs-git-cred
+ > /usr/bin/git fetch --tags --force --progress -- https://github.com/pranudevsec/new-project-citation.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > /usr/bin/git config remote.origin.url https://github.com/pranudevsec/new-project-citation.git # timeout=10
+ > /usr/bin/git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+Avoid second fetch
+ > /usr/bin/git rev-parse refs/remotes/origin/gates-testing^{commit} # timeout=10
+Checking out Revision 553ac144347309d8612867462b1fcda7f4bc6260 (refs/remotes/origin/gates-testing)
+ > /usr/bin/git config core.sparsecheckout # timeout=10
+ > /usr/bin/git checkout -f 553ac144347309d8612867462b1fcda7f4bc6260 # timeout=10
+ > /usr/bin/git branch -a -v --no-abbrev # timeout=10
+ > /usr/bin/git checkout -b gates-testing 553ac144347309d8612867462b1fcda7f4bc6260 # timeout=10
+Commit message: "Testing: added sample key to test WP#166"
+ > /usr/bin/git rev-list --no-walk c1196a47d5d4a6059511b2ae3bdce4ba6472edef # timeout=10
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🔗 Extract OpenProject Work Package)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] script
+[Pipeline] {
+[Pipeline] sh
++ git log -1 --pretty=%B
+[Pipeline] echo
+📌 Commit message: Testing: added sample key to test WP#166
+[Pipeline] echo
+✅ Linked to OpenProject Work Package: WP#166
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🚀 Notify OpenProject – Build Started)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] script
+[Pipeline] {
+[Pipeline] withCredentials
+Masking supported pattern matches of $OP_TOKEN
+[Pipeline] {
+[Pipeline] sh
++ curl -s -X POST -u apikey:**** -H Content-Type: application/json http://192.168.11.20/api/v3/work_packages/166/activities -d {
+          "comment": {
+            "format": "markdown",
+            "raw": "🚀 Jenkins build #23 STARTED"
+          }
+        }
+{"_type":"Activity::Comment","id":1693,"comment":{"format":"markdown","raw":"🚀 Jenkins build #23 STARTED","html":"<p class=\"op-uc-p\">🚀 Jenkins build <a class=\"issue work_package op-uc-link\" data-hover-card-trigger-target=\"trigger\" data-hover-card-url=\"/work_packages/23/hover_card\" href=\"/work_packages/23\" target=\"_top\">#23</a> STARTED</p>"},"details":[],"version":494,"internal":false,"createdAt":"2026-03-02T12:39:09.165Z","updatedAt":"2026-03-02T12:39:09.165Z","_links":{"attachments":{"href":"/api/v3/activities/1693/attachments"},"addAttachment":{"href":"/api/v3/activities/1693/attachments","method":"post"},"self":{"href":"/api/v3/activities/1693"},"workPackage":{"href":"/api/v3/work_packages/166","title":"Jenkins–OpenProject Integration Test"},"user":{"href":"/api/v3/users/64"},"update":{"href":"/api/v3/activities/1693","method":"patch"},"emojiReactions":{"href":"/api/v3/activities/1693/emoji_reactions"}}}
+[Pipeline] }
+[Pipeline] // withCredentials
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🔐 Fetch DevSecOps Gate Policies)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] dir
+Running in /var/lib/jenkins/workspace/citation-gates-latest/.security-gates
+[Pipeline] {
+[Pipeline] git
+The recommended git tool is: NONE
+No credentials specified
+Cloning the remote Git repository
+Cloning repository https://github.com/pranudevsec/devsecops-gates.git
+ > /usr/bin/git init /var/lib/jenkins/workspace/citation-gates-latest/.security-gates # timeout=10
+Fetching upstream changes from https://github.com/pranudevsec/devsecops-gates.git
+ > /usr/bin/git --version # timeout=10
+ > git --version # 'git version 2.43.0'
+ > /usr/bin/git fetch --tags --force --progress -- https://github.com/pranudevsec/devsecops-gates.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > /usr/bin/git config remote.origin.url https://github.com/pranudevsec/devsecops-gates.git # timeout=10
+ > /usr/bin/git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+Avoid second fetch
+ > /usr/bin/git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision 7f6c0542615a6d25c8861f12a634c0751e7e1c7f (refs/remotes/origin/main)
+ > /usr/bin/git config core.sparsecheckout # timeout=10
+ > /usr/bin/git checkout -f 7f6c0542615a6d25c8861f12a634c0751e7e1c7f # timeout=10
+ > /usr/bin/git branch -a -v --no-abbrev # timeout=10
+ > /usr/bin/git checkout -b main 7f6c0542615a6d25c8861f12a634c0751e7e1c7f # timeout=10
+Commit message: "test: gitleaks file is updated for test WP#166"
+ > /usr/bin/git rev-list --no-walk 7f6c0542615a6d25c8861f12a634c0751e7e1c7f # timeout=10
+[Pipeline] sh
++ find gates -type f -name *.sh -exec chmod +x {} +
+[Pipeline] }
+[Pipeline] // dir
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Git Debug)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] sh
++ echo ===== GIT DEBUG INFO =====
+===== GIT DEBUG INFO =====
++ git status
+On branch gates-testing
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.security-gates/
+
+nothing added to commit but untracked files present (use "git add" to track)
++ git branch --show-current
+gates-testing
++ git branch -a
+* gates-testing
+  remotes/origin/continue-updating
+  remotes/origin/gates-testing
+  remotes/origin/improved-features
+  remotes/origin/main
+  remotes/origin/security-updated
++ git remote -v
+origin	https://github.com/pranudevsec/new-project-citation.git (fetch)
+origin	https://github.com/pranudevsec/new-project-citation.git (push)
++ git branch -r --contains HEAD
+  origin/gates-testing
++ git log -1 --oneline
+553ac14 Testing: added sample key to test WP#166
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-0: Pre-Commit Security Gates)
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] tool
+[Pipeline] envVarsForTool
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] script
+[Pipeline] {
+[Pipeline] sh
++ set -e
++ GATE_DIR=.security-gates/gates/gate-0
++ [ ! -d .security-gates/gates/gate-0 ]
++ echo ==============================
+==============================
++ echo 🧱 Running gate-0
+🧱 Running gate-0
++ echo ==============================
+==============================
++ ls .security-gates/gates/gate-0/commit_gate.sh .security-gates/gates/gate-0/gitleaks.sh .security-gates/gates/gate-0/hygiene.sh .security-gates/gates/gate-0/link_gate.sh .security-gates/gates/gate-0/semgrep.sh .security-gates/gates/gate-0/trufflehog.sh
++ sort
++ echo ▶ Executing .security-gates/gates/gate-0/commit_gate.sh
+▶ Executing .security-gates/gates/gate-0/commit_gate.sh
++ bash .security-gates/gates/gate-0/commit_gate.sh
+🔍 Checking commit message policy
+--------------------------------
+Commit: Testing: added sample key to test WP#166
+
+⚠️ Commit message does NOT follow WP format
+
+Expected : WP#<id> <message>
+Example  : WP#166 Update app.ts
+
+ℹ️ Action taken:
+- Pipeline will CONTINUE
+- Violation will be TRACKED in OpenProject
+- AO will be notified if required
+
++ echo ▶ Executing .security-gates/gates/gate-0/gitleaks.sh
+▶ Executing .security-gates/gates/gate-0/gitleaks.sh
++ bash .security-gates/gates/gate-0/gitleaks.sh
+🔍 Gate-0A: Gitleaks Secret Detection
+📄 Using Gitleaks config: /var/lib/jenkins/workspace/citation-gates-latest/.security-gates/gates/gate-0/.gitleaks.toml
+📂 Current working directory: /var/lib/jenkins/workspace/citation-gates-latest
+
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
+
+[90m12:39PM[0m [32mINF[0m [1mscanned ~2728252 bytes (2.73 MB) in 430ms[0m
+[90m12:39PM[0m [33mWRN[0m [1mleaks found: 1[0m
+❌ Gitleaks found 1 secrets
+----------------------------------
+File: /repo/frontend/src/App.tsx
+Rule: generic-api-key
+Line: 12
+
+----------------------------------
+[Pipeline] withCredentials
+Masking supported pattern matches of $OP_TOKEN
+[Pipeline] {
+[Pipeline] sh
++ curl -s -X POST -u apikey:**** -H Content-Type: application/json http://192.168.11.20/api/v3/work_packages/166/activities -d {
+          "comment": {
+            "format": "markdown",
+            "raw": "
+## ❌ Gate-0 FAILED
+
+### 🔎 Execution Details
+- Gate Name: Gate-0
+- Stage: Pre-Commit Security Gates
+- Job Name: citation-gates-latest
+- Build Number: #23
+- Triggered By: System/SCM
+- Execution Time: Mon Mar 02 18:09:12 IST 2026
+- Branch: N/A 
+- Build URL: http://192.168.11.20:8080/job/citation-gates-latest/23/
+
+### Result
+One or more Gate-0 checks failed.
+"
+          }
+        }
+{"_type":"Activity::Comment","id":1694,"comment":{"format":"markdown","raw":"\n## ❌ Gate-0 FAILED\n\n### 🔎 Execution Details\n- Gate Name: Gate-0\n- Stage: Pre-Commit Security Gates\n- Job Name: citation-gates-latest\n- Build Number: #23\n- Triggered By: System/SCM\n- Execution Time: Mon Mar 02 18:09:12 IST 2026\n- Branch: N/A \n- Build URL: http://192.168.11.20:8080/job/citation-gates-latest/23/\n\n### Result\nOne or more Gate-0 checks failed.\n","html":"<h2 id=\"-gate-0-failed\" class=\"op-uc-h2\">\n<a href=\"#-gate-0-failed\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>❌ Gate-0 FAILED</h2>\n<h3 id=\"-execution-details\" class=\"op-uc-h3\">\n<a href=\"#-execution-details\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>🔎 Execution Details</h3>\n<ul class=\"op-uc-list\">\n<li class=\"op-uc-list--item\">Gate Name: Gate-0</li>\n<li class=\"op-uc-list--item\">Stage: Pre-Commit Security Gates</li>\n<li class=\"op-uc-list--item\">Job Name: citation-gates-latest</li>\n<li class=\"op-uc-list--item\">Build Number: <a class=\"issue work_package op-uc-link\" data-hover-card-trigger-target=\"trigger\" data-hover-card-url=\"/work_packages/23/hover_card\" href=\"/work_packages/23\" target=\"_top\">#23</a>\n</li>\n<li class=\"op-uc-list--item\">Triggered By: System/SCM</li>\n<li class=\"op-uc-list--item\">Execution Time: Mon Mar 02 18:09:12 IST 2026</li>\n<li class=\"op-uc-list--item\">Branch: N/A</li>\n<li class=\"op-uc-list--item\">Build URL: <a href=\"http://192.168.11.20:8080/job/citation-gates-latest/23/\" class=\"op-uc-link\" rel=\"noopener noreferrer\" target=\"_top\">http://192.168.11.20:8080/job/citation-gates-latest/23/</a>\n</li>\n</ul>\n<h3 id=\"result\" class=\"op-uc-h3\">\n<a href=\"#result\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>Result</h3>\n<p class=\"op-uc-p\">One or more Gate-0 checks failed.</p>"},"details":[],"version":495,"internal":false,"createdAt":"2026-03-02T12:39:12.396Z","updatedAt":"2026-03-02T12:39:12.396Z","_links":{"attachments":{"href":"/api/v3/activities/1694/attachments"},"addAttachment":{"href":"/api/v3/activities/1694/attachments","method":"post"},"self":{"href":"/api/v3/activities/1694"},"workPackage":{"href":"/api/v3/work_packages/166","title":"Jenkins–OpenProject Integration Test"},"user":{"href":"/api/v3/users/64"},"update":{"href":"/api/v3/activities/1694","method":"patch"},"emojiReactions":{"href":"/api/v3/activities/1694/emoji_reactions"}}}
+[Pipeline] }
+[Pipeline] // withCredentials
+[Pipeline] withCredentials
+Masking supported pattern matches of $OP_TOKEN
+[Pipeline] {
+[Pipeline] echo
+🚨 Creating OpenProject failure ticket...
+[Pipeline] echo
+📌 Project ID: 53
+[Pipeline] echo
+📌 Type ID: 1
+[Pipeline] echo
+📦 Payload:
+[Pipeline] echo
+
+    {
+      "subject": "❌ Gate-0 Security Checks FAILED | Build #23",
+      "description": {
+        "format": "markdown",
+        "raw": "\n## \u274c Gate-0 FAILED\n\n### \ud83d\udd0e Execution Details\n- Gate Name: Gate-0\n- Stage: Pre-Commit Security Gates\n- Job Name: citation-gates-latest\n- Build Number: #23\n- Triggered By: System/SCM\n- Execution Time: Mon Mar 02 18:09:12 IST 2026\n- Branch: N/A \n- Build URL: http://192.168.11.20:8080/job/citation-gates-latest/23/\n\n### Result\nOne or more Gate-0 checks failed.\n"
+      },
+      "_links": {
+        "project": { "href": "/api/v3/projects/53" },
+        "type": { "href": "/api/v3/types/1" },
+        "parent": { "href": "/api/v3/work_packages/166" }
+      }
+    }
+    
+[Pipeline] sh
++ curl -s -X POST -u apikey:**** -H Content-Type: application/json http://192.168.11.20/api/v3/work_packages -d 
+    {
+      "subject": "❌ Gate-0 Security Checks FAILED | Build #23",
+      "description": {
+        "format": "markdown",
+        "raw": "\n## \u274c Gate-0 FAILED\n\n### \ud83d\udd0e Execution Details\n- Gate Name: Gate-0\n- Stage: Pre-Commit Security Gates\n- Job Name: citation-gates-latest\n- Build Number: #23\n- Triggered By: System/SCM\n- Execution Time: Mon Mar 02 18:09:12 IST 2026\n- Branch: N/A \n- Build URL: http://192.168.11.20:8080/job/citation-gates-latest/23/\n\n### Result\nOne or more Gate-0 checks failed.\n"
+      },
+      "_links": {
+        "project": { "href": "/api/v3/projects/53" },
+        "type": { "href": "/api/v3/types/1" },
+        "parent": { "href": "/api/v3/work_packages/166" }
+      }
+    }
+    
+[Pipeline] echo
+📄 API Response: {"derivedStartDate":null,"derivedDueDate":null,"spentTime":"PT0S","laborCosts":"0.00 EUR","materialCosts":"0.00 EUR","overallCosts":"0.00 EUR","_embedded":{"attachments":{"_type":"Collection","total":0,"count":0,"_embedded":{"elements":[]},"_links":{"self":{"href":"/api/v3/work_packages/300/attachments"}}},"relations":{"_type":"Collection","total":0,"count":0,"_embedded":{"elements":[]},"_links":{"self":{"href":"/api/v3/work_packages/300/relations"}}},"type":{"_type":"Type","id":1,"name":"Task","color":"#1A67A3","position":1,"isDefault":true,"isMilestone":false,"createdAt":"2025-07-15T11:14:24.990Z","updatedAt":"2025-07-15T11:14:24.990Z","_links":{"self":{"href":"/api/v3/types/1","title":"Task"}}},"priority":{"_type":"Priority","id":8,"name":"Normal","position":2,"color":"#74C0FC","isDefault":true,"isActive":true,"_links":{"self":{"href":"/api/v3/priorities/8","title":"Normal"}}},"project":{"_type":"Project","id":53,"identifier":"gates-implemenation","name":"Gates_Implemenation","active":true,"public":false,"description":{"format":"markdown","raw":"","html":""},"createdAt":"2026-02-05T06:47:57.705Z","updatedAt":"2026-02-23T11:51:11.132Z","statusExplanation":{"format":"markdown","raw":"","html":""},"_links":{"self":{"href":"/api/v3/projects/53","title":"Gates_Implemenation"},"createWorkPackage":{"href":"/api/v3/projects/53/work_packages/form","method":"post"},"createWorkPackageImmediately":{"href":"/api/v3/projects/53/work_packages","method":"post"},"workPackages":{"href":"/api/v3/projects/53/work_packages"},"storages":[],"categories":{"href":"/api/v3/projects/53/categories"},"versions":{"href":"/api/v3/projects/53/versions"},"memberships":{"href":"/api/v3/memberships?filters=%5B%7B%22project%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%2253%22%5D%7D%7D%5D"},"types":{"href":"/api/v3/projects/53/types"},"update":{"href":"/api/v3/projects/53/form","method":"post"},"updateImmediately":{"href":"/api/v3/projects/53","method":"patch"},"schema":{"href":"/api/v3/projects/schema"},"status":{"href":"/api/v3/project_statuses/on_track","title":"On track"},"ancestors":[],"projectStorages":{"href":"/api/v3/project_storages?filters=%5B%7B%22projectId%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%2253%22%5D%7D%7D%5D"},"parent":{"href":null}}},"status":{"_type":"Status","id":1,"name":"New","isClosed":false,"color":"#1098AD","isDefault":true,"isReadonly":false,"excludedFromTotals":false,"defaultDoneRatio":0,"position":1,"_links":{"self":{"href":"/api/v3/statuses/1","title":"New"}}},"author":{"_type":"User","id":64,"name":"mahesh mahesh","createdAt":"2026-01-29T12:00:17.079Z","updatedAt":"2026-02-20T11:28:21.334Z","login":"mahesh","firstName":"mahesh","lastName":"mahesh","email":"arimallamahesh@gmail.com","avatar":"http://gravatar.com/avatar/3672ec473c92334a5e73682a94e8b26e?default=404&secure=false","status":"active","identityUrl":null,"language":"en","_links":{"self":{"href":"/api/v3/users/64","title":"mahesh mahesh"},"memberships":{"href":"/api/v3/memberships?filters=%5B%7B%22principal%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%2264%22%5D%7D%7D%5D","title":"Memberships"},"showUser":{"href":"/users/64","type":"text/html"}}},"parent":{"derivedStartDate":null,"derivedDueDate":null,"spentTime":"PT0S","laborCosts":"0.00 EUR","materialCosts":"0.00 EUR","overallCosts":"0.00 EUR","_type":"WorkPackage","id":166,"lockVersion":14,"subject":"Jenkins–OpenProject Integration Test","description":{"format":"markdown","raw":"","html":""},"scheduleManually":false,"startDate":null,"dueDate":null,"estimatedTime":null,"derivedEstimatedTime":null,"derivedRemainingTime":null,"duration":null,"ignoreNonWorkingDays":false,"percentageDone":null,"derivedPercentageDone":null,"createdAt":"2026-02-05T07:04:42.947Z","updatedAt":"2026-03-02T12:39:12.396Z","_links":{"attachments":{"href":"/api/v3/work_packages/166/attachments"},"addAttachment":{"href":"/api/v3/work_packages/166/attachments","method":"post"},"fileLinks":{"href":"/api/v3/work_packages/166/file_links"},"addFileLink":{"href":"/api/v3/work_packages/166/file_links","method":"post"},"update":{"href":"/api/v3/work_packages/166/form","method":"post"},"schema":{"href":"/api/v3/work_packages/schemas/53-1"},"updateImmediately":{"href":"/api/v3/work_packages/166","method":"patch"},"delete":{"href":"/api/v3/work_packages/166","method":"delete"},"logTime":{"href":"/api/v3/time_entries","title":"Log time on work package 'Jenkins–OpenProject Integration Test'"},"move":{"href":"/work_packages/166/move/new","type":"text/html","title":"Move work package 'Jenkins–OpenProject Integration Test'"},"copy":{"href":"/work_packages/166/copy","type":"text/html","title":"Copy work package 'Jenkins–OpenProject Integration Test'"},"pdf":{"href":"/work_packages/166.pdf","type":"application/pdf","title":"Export as PDF"},"generate_pdf":{"href":"/work_packages/166/generate_pdf_dialog","type":"text/vnd.turbo-stream.html","title":"Generate PDF"},"atom":{"href":"/work_packages/166.atom","type":"application/rss+xml","title":"Atom feed"},"availableRelationCandidates":{"href":"/api/v3/work_packages/166/available_relation_candidates","title":"Potential work packages to relate to"},"customFields":{"href":"/projects/gates-implemenation/settings/custom_fields","type":"text/html","title":"Custom fields"},"activities":{"href":"/api/v3/work_packages/166/activities"},"availableWatchers":{"href":"/api/v3/work_packages/166/available_watchers"},"relations":{"href":"/api/v3/work_packages/166/relations"},"revisions":{"href":"/api/v3/work_packages/166/revisions"},"watchers":{"href":"/api/v3/work_packages/166/watchers"},"addWatcher":{"href":"/api/v3/work_packages/166/watchers","method":"post","payload":{"user":{"href":"/api/v3/users/{user_id}"}},"templated":true},"removeWatcher":{"href":"/api/v3/work_packages/166/watchers/{user_id}","method":"delete","templated":true},"addRelation":{"href":"/api/v3/work_packages/166/relations","method":"post","title":"Add relation"},"addChild":{"href":"/api/v3/projects/gates-implemenation/work_packages","method":"post","title":"Add child of Jenkins–OpenProject Integration Test"},"changeParent":{"href":"/api/v3/work_packages/166","method":"patch","title":"Change parent of Jenkins–OpenProject Integration Test"},"addComment":{"href":"/api/v3/work_packages/166/activities","method":"post","title":"Add comment"},"previewMarkup":{"href":"/api/v3/render/markdown?context=/api/v3/work_packages/166","method":"post"},"timeEntries":{"href":"/api/v3/time_entries?filters=%5B%7B%22entity_type%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%22WorkPackage%22%5D%7D%7D%2C%7B%22entity_id%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%22166%22%5D%7D%7D%5D","title":"Time entries"},"category":{"href":null},"type":{"href":"/api/v3/types/1","title":"Task"},"priority":{"href":"/api/v3/priorities/8","title":"Normal"},"project":{"href":"/api/v3/projects/53","title":"Gates_Implemenation"},"projectPhase":{"href":null,"title":null},"projectPhaseDefinition":{"href":null,"title":null},"status":{"href":"/api/v3/statuses/12","title":"Closed"},"author":{"href":"/api/v3/users/64","title":"mahesh mahesh"},"responsible":{"href":null},"assignee":{"href":null},"version":{"href":null},"budget":{"href":null},"logCosts":{"href":"/work_packages/166/cost_entries/new","type":"text/html","title":"Log costs on Jenkins–OpenProject Integration Test"},"showCosts":{"href":"/projects/53/cost_reports?fields%5B%5D=WorkPackageId&operators%5BWorkPackageId%5D=%3D&set_filter=1&values%5BWorkPackageId%5D=166","type":"text/html","title":"Show cost entries"},"costsByType":{"href":"/api/v3/work_packages/166/summarized_costs_by_type"},"github":{"href":"/work_packages/166/tabs/github","title":"github"},"github_pull_requests":{"href":"/api/v3/work_packages/166/github_pull_requests","title":"GitHub pull requests"},"gitlab":{"href":"/work_packages/166/tabs/gitlab","title":"gitlab"},"gitlab_merge_requests":{"href":"/api/v3/work_packages/166/gitlab_merge_requests","title":"Gitlab merge requests"},"gitlab_issues":{"href":"/api/v3/work_packages/166/gitlab_issues","title":"Gitlab Issues"},"meetings":{"href":"/work_packages/166/tabs/meetings","title":"meetings"},"self":{"href":"/api/v3/work_packages/166","title":"Jenkins–OpenProject Integration Test"},"unwatch":{"href":"/api/v3/work_packages/166/watchers/64","method":"delete"},"children":[{"href":"/api/v3/work_packages/185","title":"❌ Sonar Quality Gate FAILED | Build #16"},{"href":"/api/v3/work_packages/202","title":"❌ Performance Smoke Test FAILED | Build #37"},{"href":"/api/v3/work_packages/195","title":"❌ Semgrep Org Policy Scan FAILED | Build #26"},{"href":"/api/v3/work_packages/205","title":"❌ Sonar Centralized Enforcement FAILED | Build #45"},{"href":"/api/v3/work_packages/244","title":"❌ Gate-5 DAST Failure FAILED | Build #4"},{"href":"/api/v3/work_packages/186","title":"❌ Sonar Quality Gate FAILED | Build #17"},{"href":"/api/v3/work_packages/206","title":"❌ Sonar Centralized Enforcement FAILED | Build #46"},{"href":"/api/v3/work_packages/211","title":"❌ Gate-3 Container Failure FAILED | Build #54"},{"href":"/api/v3/work_packages/235","title":"❌ Gate-5 DAST Failure FAILED | Build #72"},{"href":"/api/v3/work_packages/207","title":"❌ OWASP Dependency Check FAILED | Build #47"},{"href":"/api/v3/work_packages/299","title":"❌ Gate-0 Security Checks FAILED | Build #21"},{"href":"/api/v3/work_packages/187","title":"❌ Sonar Quality Gate FAILED | Build #18"},{"href":"/api/v3/work_packages/212","title":"❌ Gate-3 Container Failure FAILED | Build #55"},{"href":"/api/v3/work_packages/214","title":"❌ Gate-4 Performance Failure FAILED | Build #58"},{"href":"/api/v3/work_packages/213","title":"❌ Gate-3 Signature/Provenance Failure FAILED | Build #56"},{"href":"/api/v3/work_packages/245","title":"❌ Gate-5 DAST Failure FAILED | Build #90"},{"href":"/api/v3/work_packages/188","title":"❌ Sonar Quality Gate FAILED | Build #19"},{"href":"/api/v3/work_packages/189","title":"❌ Trivy Docker Scan FAILED | Build #20"},{"href":"/api/v3/work_packages/209","title":"❌ Gate-3 Container Failure FAILED | Build #52"},{"href":"/api/v3/work_packages/227","title":"❌ Gate-5 DAST Failure FAILED | Build #65"},{"href":"/api/v3/work_packages/230","title":"❌ OWASP Dependency Check FAILED | Build #67"},{"href":"/api/v3/work_packages/232","title":"❌ OWASP Dependency Check FAILED | Build #69"},{"href":"/api/v3/work_packages/236","title":"❌ Gate-5 DAST Failure FAILED | Build #77"},{"href":"/api/v3/work_packages/210","title":"❌ Gate-3 Container Failure FAILED | Build #53"},{"href":"/api/v3/work_packages/217","title":"❌ Gate-4 Performance Failure FAILED | Build #59"},{"href":"/api/v3/work_packages/231","title":"❌ Gate-5 DAST Failure FAILED | Build #68"},{"href":"/api/v3/work_packages/237","title":"❌ Gate-5 DAST Failure FAILED | Build #78"},{"href":"/api/v3/work_packages/238","title":"❌ Gate-0 Security Checks FAILED | Build #83"},{"href":"/api/v3/work_packages/239","title":"❌ Gate-5 DAST Failure FAILED | Build #85"},{"href":"/api/v3/work_packages/190","title":"❌ Trivy Docker Scan FAILED | Build #21"},{"href":"/api/v3/work_packages/191","title":"❌ Semgrep Org Policy Scan FAILED | Build #22"},{"href":"/api/v3/work_packages/203","title":"❌ Performance Smoke Test FAILED | Build #38"},{"href":"/api/v3/work_packages/229","title":"❌ Gate-5 DAST Failure FAILED | Build #66"},{"href":"/api/v3/work_packages/246","title":"❌ Gate-5 DAST Failure FAILED | Build #91"},{"href":"/api/v3/work_packages/192","title":"❌ Semgrep Org Policy Scan FAILED | Build #23"},{"href":"/api/v3/work_packages/300","title":"❌ Gate-0 Security Checks FAILED | Build #23"},{"href":"/api/v3/work_packages/196","title":"❌ Gate-0 Security Checks FAILED | Build #27"},{"href":"/api/v3/work_packages/197","title":"❌ Gate-0 Security Checks FAILED | Build #28"},{"href":"/api/v3/work_packages/199","title":"❌ Gate-0 Security Checks FAILED | Build #30"},{"href":"/api/v3/work_packages/201","title":"❌ Performance Smoke Test FAILED | Build #33"},{"href":"/api/v3/work_packages/204","title":"❌ Gate-0 Security Checks FAILED | Build #40"},{"href":"/api/v3/work_packages/233","title":"❌ Gate-4 Performance Failure FAILED | Build #70"},{"href":"/api/v3/work_packages/200","title":"❌ Trivy Docker Scan FAILED | Build #31"},{"href":"/api/v3/work_packages/247","title":"❌ Gate-5 DAST Failure FAILED | Build #92"},{"href":"/api/v3/work_packages/198","title":"❌ Gate-0 Security Checks FAILED | Build #29"},{"href":"/api/v3/work_packages/193","title":"❌ Gitleaks Secret Scan FAILED | Build #24"},{"href":"/api/v3/work_packages/194","title":"❌ Gitleaks Secret Scan FAILED | Build #25"},{"href":"/api/v3/work_packages/222","title":"❌ Gate-5 DAST Failure FAILED | Build #61"},{"href":"/api/v3/work_packages/223","title":"❌ Gate-5 DAST Failure FAILED | Build #64"},{"href":"/api/v3/work_packages/234","title":"❌ Gate-5 DAST Failure FAILED | Build #71"},{"href":"/api/v3/work_packages/208","title":"❌ OWASP ZAP DAST FAILED | Build #48"},{"href":"/api/v3/work_packages/240","title":"❌ Gate-5 DAST Failure FAILED | Build #86"},{"href":"/api/v3/work_packages/248","title":"❌ Gate-5 DAST Failure FAILED | Build #93"},{"href":"/api/v3/work_packages/250","title":"❌ Gate-5 DAST Failure FAILED | Build #95"},{"href":"/api/v3/work_packages/286","title":"❌ Gate-0 Security Checks FAILED | Build #1"},{"href":"/api/v3/work_packages/289","title":"❌ Gate-5 DAST Failure FAILED | Build #9"},{"href":"/api/v3/work_packages/290","title":"❌ Gate-0 Security Checks FAILED | Build #12"},{"href":"/api/v3/work_packages/292","title":"❌ Sonar Centralized Enforcement FAILED | Build #14"},{"href":"/api/v3/work_packages/293","title":"❌ Gate-0 Security Checks FAILED | Build #15"},{"href":"/api/v3/work_packages/294","title":"❌ Gate-0 Security Checks FAILED | Build #16"},{"href":"/api/v3/work_packages/295","title":"❌ Gate-0 Security Checks FAILED | Build #17"},{"href":"/api/v3/work_packages/297","title":"❌ Gate-0 Security Checks FAILED | Build #19"},{"href":"/api/v3/work_packages/242","title":"❌ Gate-5 DAST Failure FAILED | Build #87"},{"href":"/api/v3/work_packages/249","title":"❌ Gate-5 DAST Failure FAILED | Build #94"},{"href":"/api/v3/work_packages/243","title":"❌ Gate-5 DAST Failure FAILED | Build #88"},{"href":"/api/v3/work_packages/251","title":"❌ Sonar Centralized Enforcement FAILED | Build #96"},{"href":"/api/v3/work_packages/252","title":"❌ Gate-0 Security Checks FAILED | Build #97"},{"href":"/api/v3/work_packages/285","title":"❌ Gate-0 Security Checks FAILED | Build #100"},{"href":"/api/v3/work_packages/287","title":"❌ Gate-0 Security Checks FAILED | Build #2"},{"href":"/api/v3/work_packages/288","title":"❌ Gate-5 DAST Failure FAILED | Build #3"},{"href":"/api/v3/work_packages/291","title":"❌ Sonar Centralized Enforcement FAILED | Build #13"},{"href":"/api/v3/work_packages/296","title":"❌ Gate-0 Security Checks FAILED | Build #18"},{"href":"/api/v3/work_packages/298","title":"❌ Gate-0 Security Checks FAILED | Build #20"}],"ancestors":[],"parent":{"href":null,"title":null},"customActions":[]}},"customActions":[],"costsByType":{"_type":"Collection","total":0,"count":0,"_embedded":{"elements":[]},"_links":{"self":{"href":"/api/v3/work_packages/300/summarized_costs_by_type"}}}},"_type":"WorkPackage","id":300,"lockVersion":0,"subject":"❌ Gate-0 Security Checks FAILED | Build #23","description":{"format":"markdown","raw":"\n## ❌ Gate-0 FAILED\n\n### 🔎 Execution Details\n- Gate Name: Gate-0\n- Stage: Pre-Commit Security Gates\n- Job Name: citation-gates-latest\n- Build Number: #23\n- Triggered By: System/SCM\n- Execution Time: Mon Mar 02 18:09:12 IST 2026\n- Branch: N/A \n- Build URL: http://192.168.11.20:8080/job/citation-gates-latest/23/\n\n### Result\nOne or more Gate-0 checks failed.\n","html":"<h2 id=\"-gate-0-failed\" class=\"op-uc-h2\">\n<a href=\"#-gate-0-failed\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>❌ Gate-0 FAILED</h2>\n<h3 id=\"-execution-details\" class=\"op-uc-h3\">\n<a href=\"#-execution-details\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>🔎 Execution Details</h3>\n<ul class=\"op-uc-list\">\n<li class=\"op-uc-list--item\">Gate Name: Gate-0</li>\n<li class=\"op-uc-list--item\">Stage: Pre-Commit Security Gates</li>\n<li class=\"op-uc-list--item\">Job Name: citation-gates-latest</li>\n<li class=\"op-uc-list--item\">Build Number: <a class=\"issue work_package op-uc-link\" data-hover-card-trigger-target=\"trigger\" data-hover-card-url=\"/work_packages/23/hover_card\" href=\"/work_packages/23\" target=\"_top\">#23</a>\n</li>\n<li class=\"op-uc-list--item\">Triggered By: System/SCM</li>\n<li class=\"op-uc-list--item\">Execution Time: Mon Mar 02 18:09:12 IST 2026</li>\n<li class=\"op-uc-list--item\">Branch: N/A</li>\n<li class=\"op-uc-list--item\">Build URL: <a href=\"http://192.168.11.20:8080/job/citation-gates-latest/23/\" class=\"op-uc-link\" rel=\"noopener noreferrer\" target=\"_top\">http://192.168.11.20:8080/job/citation-gates-latest/23/</a>\n</li>\n</ul>\n<h3 id=\"result\" class=\"op-uc-h3\">\n<a href=\"#result\" aria-hidden=\"true\" rel=\"noopener noreferrer\" class=\"op-uc-link_permalink icon-link op-uc-link\"></a>Result</h3>\n<p class=\"op-uc-p\">One or more Gate-0 checks failed.</p>"},"scheduleManually":true,"startDate":null,"dueDate":null,"estimatedTime":null,"derivedEstimatedTime":null,"derivedRemainingTime":null,"duration":null,"ignoreNonWorkingDays":false,"percentageDone":null,"derivedPercentageDone":null,"createdAt":"2026-03-02T12:39:12.760Z","updatedAt":"2026-03-02T12:39:12.760Z","_links":{"attachments":{"href":"/api/v3/work_packages/300/attachments"},"addAttachment":{"href":"/api/v3/work_packages/300/attachments","method":"post"},"fileLinks":{"href":"/api/v3/work_packages/300/file_links"},"addFileLink":{"href":"/api/v3/work_packages/300/file_links","method":"post"},"update":{"href":"/api/v3/work_packages/300/form","method":"post"},"schema":{"href":"/api/v3/work_packages/schemas/53-1"},"updateImmediately":{"href":"/api/v3/work_packages/300","method":"patch"},"delete":{"href":"/api/v3/work_packages/300","method":"delete"},"logTime":{"href":"/api/v3/time_entries","title":"Log time on work package '❌ Gate-0 Security Checks FAILED | Build #23'"},"move":{"href":"/work_packages/300/move/new","type":"text/html","title":"Move work package '❌ Gate-0 Security Checks FAILED | Build #23'"},"copy":{"href":"/work_packages/300/copy","type":"text/html","title":"Copy work package '❌ Gate-0 Security Checks FAILED | Build #23'"},"pdf":{"href":"/work_packages/300.pdf","type":"application/pdf","title":"Export as PDF"},"generate_pdf":{"href":"/work_packages/300/generate_pdf_dialog","type":"text/vnd.turbo-stream.html","title":"Generate PDF"},"atom":{"href":"/work_packages/300.atom","type":"application/rss+xml","title":"Atom feed"},"availableRelationCandidates":{"href":"/api/v3/work_packages/300/available_relation_candidates","title":"Potential work packages to relate to"},"customFields":{"href":"/projects/gates-implemenation/settings/custom_fields","type":"text/html","title":"Custom fields"},"activities":{"href":"/api/v3/work_packages/300/activities"},"availableWatchers":{"href":"/api/v3/work_packages/300/available_watchers"},"relations":{"href":"/api/v3/work_packages/300/relations"},"revisions":{"href":"/api/v3/work_packages/300/revisions"},"watchers":{"href":"/api/v3/work_packages/300/watchers"},"addWatcher":{"href":"/api/v3/work_packages/300/watchers","method":"post","payload":{"user":{"href":"/api/v3/users/{user_id}"}},"templated":true},"removeWatcher":{"href":"/api/v3/work_packages/300/watchers/{user_id}","method":"delete","templated":true},"addRelation":{"href":"/api/v3/work_packages/300/relations","method":"post","title":"Add relation"},"addChild":{"href":"/api/v3/projects/gates-implemenation/work_packages","method":"post","title":"Add child of ❌ Gate-0 Security Checks FAILED | Build #23"},"changeParent":{"href":"/api/v3/work_packages/300","method":"patch","title":"Change parent of ❌ Gate-0 Security Checks FAILED | Build #23"},"addComment":{"href":"/api/v3/work_packages/300/activities","method":"post","title":"Add comment"},"previewMarkup":{"href":"/api/v3/render/markdown?context=/api/v3/work_packages/300","method":"post"},"timeEntries":{"href":"/api/v3/time_entries?filters=%5B%7B%22entity_type%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%22WorkPackage%22%5D%7D%7D%2C%7B%22entity_id%22%3A%7B%22operator%22%3A%22%3D%22%2C%22values%22%3A%5B%22300%22%5D%7D%7D%5D","title":"Time entries"},"category":{"href":null},"type":{"href":"/api/v3/types/1","title":"Task"},"priority":{"href":"/api/v3/priorities/8","title":"Normal"},"project":{"href":"/api/v3/projects/53","title":"Gates_Implemenation"},"projectPhase":{"href":null,"title":null},"projectPhaseDefinition":{"href":null,"title":null},"status":{"href":"/api/v3/statuses/1","title":"New"},"author":{"href":"/api/v3/users/64","title":"mahesh mahesh"},"responsible":{"href":null},"assignee":{"href":null},"version":{"href":null},"budget":{"href":null},"logCosts":{"href":"/work_packages/300/cost_entries/new","type":"text/html","title":"Log costs on ❌ Gate-0 Security Checks FAILED | Build #23"},"showCosts":{"href":"/projects/53/cost_reports?fields%5B%5D=WorkPackageId&operators%5BWorkPackageId%5D=%3D&set_filter=1&values%5BWorkPackageId%5D=300","type":"text/html","title":"Show cost entries"},"costsByType":{"href":"/api/v3/work_packages/300/summarized_costs_by_type"},"github":{"href":"/work_packages/300/tabs/github","title":"github"},"github_pull_requests":{"href":"/api/v3/work_packages/300/github_pull_requests","title":"GitHub pull requests"},"gitlab":{"href":"/work_packages/300/tabs/gitlab","title":"gitlab"},"gitlab_merge_requests":{"href":"/api/v3/work_packages/300/gitlab_merge_requests","title":"Gitlab merge requests"},"gitlab_issues":{"href":"/api/v3/work_packages/300/gitlab_issues","title":"Gitlab Issues"},"meetings":{"href":"/work_packages/300/tabs/meetings","title":"meetings"},"self":{"href":"/api/v3/work_packages/300","title":"❌ Gate-0 Security Checks FAILED | Build #23"},"unwatch":{"href":"/api/v3/work_packages/300/watchers/64","method":"delete"},"ancestors":[{"href":"/api/v3/work_packages/166","title":"Jenkins–OpenProject Integration Test"}],"parent":{"href":"/api/v3/work_packages/166","title":"Jenkins–OpenProject Integration Test"},"customActions":[]}}
+[Pipeline] writeFile
+[Pipeline] sh
++ jq -r .id op_response.json
+[Pipeline] echo
+🎫 Ticket Created Successfully: 300
+[Pipeline] sh
++ [ -f security-reports/gitleaks/gitleaks-report.json ]
++ echo 📎 Uploading security-reports/gitleaks/gitleaks-report.json...
+📎 Uploading security-reports/gitleaks/gitleaks-report.json...
++ basename security-reports/gitleaks/gitleaks-report.json
++ curl -s -X POST -u apikey:**** -H Content-Type: application/octet-stream --data-binary @security-reports/gitleaks/gitleaks-report.json http://192.168.11.20/api/v3/uploads?filename=gitleaks-report.json
++ UPLOAD_RESPONSE={"_type":"Error","errorIdentifier":"urn:openproject-org:api:v3:errors:TypeNotSupported","message":"Expected CONTENT-TYPE to be 'application/json application/hal+json' but got 'application/octet-stream'."}
++ echo {"_type":"Error","errorIdentifier":"urn:openproject-org:api:v3:errors:TypeNotSupported","message":"Expected CONTENT-TYPE to be 'application/json application/hal+json' but got 'application/octet-stream'."}
++ jq -r .token
++ UPLOAD_TOKEN=null
++ curl -s -X PATCH -u apikey:**** -H Content-Type: application/json http://192.168.11.20/api/v3/work_packages/300 -d {
+                "_links": {
+                  "attachments": [
+                    { "href": "/api/v3/uploads/null" }
+                  ]
+                }
+              }
+{"_type":"Error","errorIdentifier":"urn:openproject-org:api:v3:errors:ResourceTypeMismatch","message":"For property 'attachment' a link like '/api/v3/attachments/:id' is expected, but got '/api/v3/uploads/null'."}
+[Pipeline] }
+[Pipeline] // withCredentials
+[Pipeline] error
+[Pipeline] }
+[Pipeline] // script
+Post stage
+[Pipeline] archiveArtifacts
+Archiving artifacts
+Recording fingerprints
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Compile Applications & Install the dependencies)
+Stage "Compile Applications & Install the dependencies" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] parallel
+[Pipeline] { (Branch: Compile Backend)
+[Pipeline] { (Branch: Compile Frontend & Install the dependencies)
+[Pipeline] stage
+[Pipeline] { (Compile Backend)
+[Pipeline] stage
+[Pipeline] { (Compile Frontend & Install the dependencies)
+Stage "Compile Backend" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+Stage "Compile Frontend & Install the dependencies" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] // stage
+[Pipeline] }
+Failed in branch Compile Backend
+[Pipeline] }
+Failed in branch Compile Frontend & Install the dependencies
+[Pipeline] // parallel
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-1: SonarQube Centralized Enforcement)
+Stage "Gate-1: SonarQube Centralized Enforcement" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🛡️ Gate-2: OWASP Dependency Check)
+Stage "🛡️ Gate-2: OWASP Dependency Check" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Docker Images)
+Stage "Build Docker Images" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (SBOM Generation (Syft))
+Stage "SBOM Generation (Syft)" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-3: Container Trust & Policy)
+Stage "Gate-3: Container Trust & Policy" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Push Docker Images)
+Stage "Push Docker Images" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Image Signing - Cosign)
+Stage "Image Signing - Cosign" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Image Attestation - Cosign)
+Stage "Image Attestation - Cosign" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-3: Signature & Provenance Verification)
+Stage "Gate-3: Signature & Provenance Verification" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🚀 Deploy Citation via Docker Run (Secure - Digest Based))
+Stage "🚀 Deploy Citation via Docker Run (Secure - Digest Based)" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-4.1: Performance Test - JMeter)
+Stage "Gate-4.1: Performance Test - JMeter" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-4.2: Performance Quality Gate)
+Stage "Gate-4.2: Performance Quality Gate" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (🛡️ ZAP Execution)
+Stage "🛡️ ZAP Execution" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Gate-5: DAST Centralized Enforcement)
+Stage "Gate-5: DAST Centralized Enforcement" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // withCredentials
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+ERROR: Stopping pipeline due to Gate-0 failure
+[InfluxDB Plugin] Collecting data...
+[InfluxDB plugin] Custom Data plugin data found. Writing to InfluxDB...
+[InfluxDB plugin] Git plugin data found. Writing to InfluxDB...
+[InfluxDB plugin] Change log plugin data found. Writing to InfluxDB...
+[InfluxDB plugin] Metrics plugin data found. Writing to InfluxDB...
+[InfluxDB Plugin] Publishing data to target 'influxdb' (url='http://192.168.11.20:8086', database='jenkins')
+Finished: FAILURE
