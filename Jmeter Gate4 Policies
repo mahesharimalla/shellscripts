@@ -1,0 +1,216 @@
+Perfect 👍 Since you're enforcing Gate-4 via shell scripts, let’s structure everything cleanly in .sh files.
+We’ll create 4 Gate-4 policy scripts:
+1.	Performance SLA
+2.	Error Rate Policy
+3.	Lockout Mechanism Validation
+4.	Concurrent Login Validation
+Assumption:
+JMeter generates perf-report.json and auth-report.json
+Tool used: Apache JMeter
+________________________________________
+✅ 1️⃣ performance_sla.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "⏱️ Gate-4: Performance SLA Check"
+
+AVG_RESPONSE=$(jq '.aggregate.average.responseTime' perf-report.json)
+
+THRESHOLD=2000
+
+if awk "BEGIN {exit !($AVG_RESPONSE <= $THRESHOLD)}"; then
+  echo "✅ Response time within SLA ($AVG_RESPONSE ms)"
+else
+  echo "❌ SLA Violated! Average response time: $AVG_RESPONSE ms"
+  exit 1
+fi
+✔ Fails if response time > 2000 ms
+________________________________________
+✅ 2️⃣ error_rate_policy.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "📉 Gate-4: Error Rate Policy Check"
+
+ERROR_RATE=$(jq '.aggregate.errorRate' perf-report.json)
+
+THRESHOLD=1
+
+if awk "BEGIN {exit !($ERROR_RATE < $THRESHOLD)}"; then
+  echo "✅ Error rate compliant ($ERROR_RATE%)"
+else
+  echo "❌ Error rate too high: $ERROR_RATE%"
+  exit 1
+fi
+✔ Fails if error rate ≥ 1%
+________________________________________
+✅ 3️⃣ lockout_policy.sh
+Assumption:
+JMeter writes failed login results in auth-report.json
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔐 Gate-4: Lockout Mechanism Check"
+
+LOCK_STATUS=$(jq '.lockoutTriggered' auth-report.json)
+
+if [ "$LOCK_STATUS" = "true" ]; then
+  echo "✅ Account lockout mechanism working"
+else
+  echo "❌ Weak Lockout Mechanism! Account not locked after threshold"
+  exit 1
+fi
+✔ Fails if account does not lock
+________________________________________
+✅ 4️⃣ concurrent_login_policy.sh
+Assumption:
+JMeter records active session count in auth-report.json
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "👥 Gate-4: Concurrent Login Policy Check"
+
+MAX_ALLOWED=1
+ACTIVE_SESSIONS=$(jq '.activeSessions' auth-report.json)
+
+if [ "$ACTIVE_SESSIONS" -le "$MAX_ALLOWED" ]; then
+  echo "✅ Concurrent session policy enforced"
+else
+  echo "❌ Multiple concurrent sessions detected ($ACTIVE_SESSIONS)"
+  exit 1
+fi
+✔ Fails if multiple sessions allowed
+________________________________________
+🚀 How to Call in Jenkins
+bash performance_sla.sh
+bash error_rate_policy.sh
+bash lockout_policy.sh
+bash concurrent_login_policy.sh
+If any script exits with 1 → ❌ Pipeline fails
+________________________________________
+🔥 Final Gate-4 Coverage
+Script	Checks
+performance_sla.sh	Response time
+error_rate_policy.sh	Stability
+lockout_policy.sh	Brute-force protection
+concurrent_login_policy.sh	Session control
+________________________________________
+🧠 Final Understanding
+Gate-4 now validates:
+•	Performance
+•	Stability
+•	Authentication Security
+•	Session Management
+All enforced automatically via .sh policy scripts.
+________________________________________
+If you want, I can now give you a single combined gate4_policy.sh that checks everything in one script instead of 4 separate files.
+
+
+Perfect 👍 Below is a single combined gate4_policy.sh that enforces:
+•	✅ Performance SLA
+•	✅ Error Rate Policy
+•	✅ Lockout Mechanism
+•	✅ Concurrent Login Control
+Assumptions:
+•	perf-report.json → Generated from JMeter performance test
+•	auth-report.json → Generated from JMeter authentication/security test
+•	jq is installed
+________________________________________
+✅ gate4_policy.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🚦 Gate-4: Performance & Runtime Security Policy"
+
+FAIL=0
+
+# -------------------------------
+# 1️⃣ Performance SLA Check
+# -------------------------------
+echo "⏱️ Checking Performance SLA..."
+
+AVG_RESPONSE=$(jq -r '.aggregate.average.responseTime' perf-report.json)
+SLA_THRESHOLD=2000
+
+if awk "BEGIN {exit !($AVG_RESPONSE <= $SLA_THRESHOLD)}"; then
+  echo "✅ SLA OK: $AVG_RESPONSE ms"
+else
+  echo "❌ SLA Violated: $AVG_RESPONSE ms (Threshold: $SLA_THRESHOLD ms)"
+  FAIL=1
+fi
+
+
+# -------------------------------
+# 2️⃣ Error Rate Check
+# -------------------------------
+echo "📉 Checking Error Rate..."
+
+ERROR_RATE=$(jq -r '.aggregate.errorRate' perf-report.json)
+ERROR_THRESHOLD=1
+
+if awk "BEGIN {exit !($ERROR_RATE < $ERROR_THRESHOLD)}"; then
+  echo "✅ Error Rate OK: $ERROR_RATE%"
+else
+  echo "❌ High Error Rate: $ERROR_RATE% (Threshold: < $ERROR_THRESHOLD%)"
+  FAIL=1
+fi
+
+
+# -------------------------------
+# 3️⃣ Lockout Mechanism Check
+# -------------------------------
+echo "🔐 Checking Lockout Policy..."
+
+LOCK_STATUS=$(jq -r '.lockoutTriggered' auth-report.json)
+
+if [ "$LOCK_STATUS" = "true" ]; then
+  echo "✅ Lockout mechanism working"
+else
+  echo "❌ Weak Lockout Mechanism detected"
+  FAIL=1
+fi
+
+
+# -------------------------------
+# 4️⃣ Concurrent Login Check
+# -------------------------------
+echo "👥 Checking Concurrent Login Policy..."
+
+MAX_ALLOWED=1
+ACTIVE_SESSIONS=$(jq -r '.activeSessions' auth-report.json)
+
+if [ "$ACTIVE_SESSIONS" -le "$MAX_ALLOWED" ]; then
+  echo "✅ Concurrent session policy enforced"
+else
+  echo "❌ Multiple active sessions detected ($ACTIVE_SESSIONS)"
+  FAIL=1
+fi
+
+
+# -------------------------------
+# Final Decision
+# -------------------------------
+if [ "$FAIL" -eq 0 ]; then
+  echo "🎉 Gate-4 PASSED: Application meets Performance & Security policies"
+  exit 0
+else
+  echo "🚫 Gate-4 FAILED: Policy violations detected"
+  exit 1
+fi
+________________________________________
+🚀 How to Use in Jenkins Pipeline
+bash gate4_policy.sh
+If any condition fails → script exits 1 → Jenkins build fails automatically.
+________________________________________
+🛡️ What This Single Script Now Covers
+Category	Policy
+Performance	Avg Response ≤ 2000ms
+Stability	Error Rate < 1%
+Brute Force Protection	Account locks after threshold
+Session Management	Max 1 active session
+________________________________________
+
+
+
+
+
